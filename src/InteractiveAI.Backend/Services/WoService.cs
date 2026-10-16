@@ -843,7 +843,8 @@ public class WoService : IWoService
 
     private string ClassifyPiece(string piece, List<string> cats)
     {
-        var hay = " " + (piece ?? string.Empty).ToUpperInvariant() + " ";
+        var probe = System.Text.RegularExpressions.Regex.Replace(piece ?? string.Empty, @"\[[^\]]+\]", " ");
+        var hay = " " + probe.ToUpperInvariant() + " ";
         var score = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var matched = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         foreach (var alias in _woOpt.CategoryAliases)
@@ -883,20 +884,29 @@ public class WoService : IWoService
     private Dictionary<string, string> RedistributeComplaint(Dictionary<string, string> map, List<string> cats)
     {
         var out_ = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var raw = new List<string>();
+        var raw = new List<(string Tag, string Text)>();
         foreach (var kv in map)
             foreach (var piece in SplitRawSegments(kv.Value))
                 foreach (var sub in SplitPiece(piece))
                 {
-                    var clean = System.Text.RegularExpressions.Regex.Replace(sub.Trim(), @"^\[[^\]]+\]\s*", "");
-                    raw.Add($"[{kv.Key}] {(clean.Length > 0 ? clean : sub.Trim())}".Trim());
+                    var t = sub.Trim();
+                    if (t.Length == 0) continue;
+                    var tagCat = "";
+                    var m = System.Text.RegularExpressions.Regex.Match(t, @"^\[([^\]]+)\]");
+                    if (m.Success) tagCat = NormalizeCategory(m.Groups[1].Value.Trim());
+                    var clean = System.Text.RegularExpressions.Regex.Replace(t, @"^\[[^\]]+\]\s*", "").Trim();
+                    if (clean.Length == 0) clean = t;
+                    raw.Add((tagCat, clean));
                 }
         var idx = 0;
-        foreach (var piece in raw)
+        foreach (var (tagCat, text) in raw)
         {
-            var target = ClassifyPiece(piece, cats);
+            var target = ClassifyPiece(text, cats);
+            if (target.Length == 0 && tagCat.Length > 0
+                && cats.Exists(x => x.Equals(tagCat, StringComparison.OrdinalIgnoreCase)))
+                target = tagCat;
             if (target.Length == 0) target = cats[idx % cats.Count];
-            AppendKeluhan(out_, target, piece);
+            AppendKeluhan(out_, target, text);
             idx++;
         }
         return out_;
