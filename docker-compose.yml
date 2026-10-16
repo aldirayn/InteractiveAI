@@ -1,0 +1,41 @@
+# InteractiveAI - server development (192.168.225.10)
+#
+#   copy .env.example .env      (sekali, lalu isi)
+#   docker compose up -d --build
+#   docker compose logs -f backend
+#
+# Browser -> frontend :5001 -> backend (jaringan internal compose, http://backend:5000)
+name: interactiveai
+
+services:
+  backend:
+    build: ./src/InteractiveAI.Backend
+    image: interactiveai-backend:dev
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      TZ: Asia/Jakarta
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    volumes:
+      # model AI dari server (tidak ada di git / image)
+      - ${MODEL_DIR}:/app/model
+      - ${MODELS_DIR}:/app/Models
+      # log Serilog tetap di server
+      - ${LOG_DIR}/backend:/app/logs
+
+  frontend:
+    build: ./src/InteractiveAI.Frontend
+    image: interactiveai-frontend:dev
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Backend__BaseUrl: http://backend:5000
+      TZ: Asia/Jakarta
+    ports:
+      - "${FRONTEND_PORT:-5001}:5001"
+    depends_on:
+      backend:
+        condition: service_healthy

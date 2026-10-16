@@ -1,0 +1,61 @@
+# Deploy otomatis ke server DEVELOPMENT (192.168.225.10) setiap push ke main.
+# Jalan di GitHub Actions self-hosted runner yang dipasang DI server dev (label: dev-server).
+# Server tidak perlu git: actions/checkout otomatis mengunduh source lewat GitHub API.
+#
+# Prasyarat di server (sekali):
+#   - Docker (Linux containers) + docker compose
+#   - D:\InteractiveAI_docker\.env  (salin dari .env.example lalu isi) - tidak pernah ditimpa workflow
+#   - model AI di folder yang ditunjuk MODEL_DIR / MODELS_DIR di .env
+name: Deploy dev (Docker)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:        # tombol "Run workflow" manual di tab Actions
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [ self-hosted, windows, dev-server ]
+    timeout-minutes: 40
+    env:
+      ENV_FILE: D:\InteractiveAI_docker\.env
+    steps:
+      - name: Ambil source
+        uses: actions/checkout@v4
+
+      - name: Build & jalankan container
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (-not (Test-Path $env:ENV_FILE)) { throw "File $env:ENV_FILE belum ada. Salin dari .env.example lalu isi." }
+          docker version --format "Docker {{.Server.Version}} ({{.Server.Os}})"
+          docker compose --env-file $env:ENV_FILE up -d --build --remove-orphans
+          if ($LASTEXITCODE -ne 0) { throw "docker compose up gagal (exit $LASTEXITCODE)" }
+          docker compose --env-file $env:ENV_FILE ps
+
+      - name: Health check
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($u in @("http://localhost:5000/health", "http://localhost:5001/")) {
+            $ok = $false
+            for ($i = 1; $i -le 18 -and -not $ok; $i++) {
+              try {
+                $r = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 15
+                if ($r.StatusCode -lt 400) { $ok = $true; Write-Host "OK $($r.StatusCode) $u" }
+              } catch { Write-Host "Percobaan $i ($u): $($_.Exception.Message)"; Start-Sleep -Seconds 5 }
+            }
+            if (-not $ok) {
+              docker compose --env-file $env:ENV_FILE logs --tail 80
+              throw "Health check gagal: $u"
+            }
+          }
+
+      - name: Bersihkan image lama
+        if: always()
+        shell: powershell
+        run: docker image prune -f

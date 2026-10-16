@@ -1,0 +1,13 @@
+bin/
+obj/
+logs/
+*.db
+*.db-shm
+*.db-wal
+*.onnx
+*.bin
+*.tar.gz
+weya_nc*.dll
+*.user
+Dockerfile
+.dockerignore
