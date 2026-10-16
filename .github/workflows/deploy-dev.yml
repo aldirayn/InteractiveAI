@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build & jalankan container
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = "Stop"
           if (-not (Test-Path $env:ENV_FILE)) { throw "File $env:ENV_FILE belum ada. Salin dari .env.example lalu isi." }
@@ -38,7 +38,7 @@ jobs:
           docker compose --env-file $env:ENV_FILE ps
 
       - name: Health check
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = "Stop"
           foreach ($u in @("http://localhost:5000/health", "http://localhost:5001/")) {
@@ -57,5 +57,5 @@ jobs:
 
       - name: Bersihkan image lama
         if: always()
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: docker image prune -f
