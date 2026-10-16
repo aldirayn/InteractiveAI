@@ -1,0 +1,10 @@
+bin/
+obj/
+*.db
+*.onnx
+.vs/
+# Artefak STT backend (besar, ditaruh manual di model/ — lihat README):
+# weya_nc.dll, hush_onnx.tar.gz, ggml-base.bin
+*.bin
+weya_nc*.dll
+*.tar.gz

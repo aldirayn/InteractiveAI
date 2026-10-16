@@ -1,0 +1,526 @@
+
+
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+
+const src = readFileSync('./src/InteractiveAI.Frontend/wwwroot/js/chat.js', 'utf8');
+const start = src.indexOf('let aiSpokenRecently');
+const end = src.indexOf('let neuralAudio');
+if (start < 0 || end < 0) throw new Error('Bagian anti-gema tidak ditemukan di chat.js');
+const block = src.slice(start, end);
+
+
+const sandbox = {
+  aiSpeaking: false,
+  echoMuteUntil: 0,
+  aiSpokenRecently: [],
+};
+vm.createContext(sandbox);
+vm.runInContext(block, sandbox);
+
+const { isEchoOfAi, rememberAiSpeech } = sandbox;
+let pass = 0, fail = 0;
+const check = (name, got, want) => {
+  const ok = got === want;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}  (got=${got} want=${want})`);
+  ok ? pass++ : fail++;
+};
+
+const greeting = 'Halo, saya Kiat Ananda AI dari loket work order. Ada yang bisa saya bantu?';
+rememberAiSpeech(greeting);
+
+check('gema persis kalimat AI -> dibuang', isEchoOfAi('halo saya kiat ananda ai dari loket work order ada yang bisa saya bantu'), true);
+check('gema sebagian (kata AI mayoritas) -> dibuang', isEchoOfAi('saya kiat ananda ai dari loket work order'), true);
+check('jawaban sopir asli -> lolos', isEchoOfAi('pak saya mau perbaiki rem belakang truk nomor unit b satu dua tiga empat'), false);
+check('jawaban pendek 1 kata -> lolos', isEchoOfAi('iya'), false);
+check('jawaban pendek 2 kata -> lolos', isEchoOfAi('iya pak'), false);
+check('teks kosong/tanda baca saja -> dibuang', isEchoOfAi('...'), true);
+
+
+sandbox.aiSpeaking = true;
+check('AI sedang bicara -> semua dibuang', isEchoOfAi('pak saya mau perbaiki rem belakang truk'), true);
+sandbox.aiSpeaking = false;
+
+
+sandbox.echoMuteUntil = Date.now() + 5000;
+check('masih dalam jeda anti-gema -> dibuang', isEchoOfAi('pak saya mau perbaiki rem belakang truk'), true);
+sandbox.echoMuteUntil = 0;
+
+
+vm.runInContext('aiSpeaking = true', sandbox);
+check('gate tertutup: teks pendek ikut dibuang', isEchoOfAi('iya'), true);
+vm.runInContext('aiSpeaking = false', sandbox);
+
+
+vm.runInContext(
+  `aiSpokenRecently = [{ text: 'halo saya kiat ananda ai dari loket work order ada yang bisa saya bantu', at: Date.now() - 60000 }]`,
+  sandbox);
+check('ingatan gema kadaluarsa -> lolos', isEchoOfAi('halo saya kiat ananda ai dari loket work order ada yang bisa saya bantu'), false);
+
+
+const s2 = src.indexOf('const BROWSER_CHUNK_CHARS');
+const e2 = src.indexOf('function browserSpeak');
+vm.runInContext(src.slice(s2, e2), sandbox);
+const { chunkForSpeech } = sandbox;
+
+const short = chunkForSpeech('Halo, ada yang bisa saya bantu?');
+check('teks pendek -> 1 potongan', short.length, 1);
+
+const long = 'Halo pak, saya Kiat Ananda AI dari loket work order. Silakan sebutkan nama bapak, ' +
+  'nomor unit truk, dan keluhan perbaikannya. Setelah itu tunjukkan QR Kimo ke kamera ya, ' +
+  'supaya saya bisa langsung membuatkan work order untuk bapak hari ini. Terima kasih.';
+const parts = chunkForSpeech(long);
+check('teks panjang -> dipecah (>1 potongan)', parts.length > 1, true);
+check('semua potongan <= 160 char', parts.every(p => p.length <= 160), true);
+check('tidak ada kata hilang', parts.join(' ').replace(/\s+/g, ' ').trim(), long.replace(/\s+/g, ' ').trim());
+
+const noSpace = 'x'.repeat(400);
+check('tanpa spasi -> tetap terpotong', chunkForSpeech(noSpace).every(p => p.length <= 160), true);
+check('teks kosong -> 0 potongan', chunkForSpeech('   ').length, 0);
+
+
+const vsrc = readFileSync('./src/InteractiveAI.Frontend/wwwroot/js/vision.js', 'utf8');
+const vsp = readFileSync('./src/InteractiveAI.Frontend/wwwroot/js/vision-speech.js', 'utf8');
+const usrc = readFileSync('./src/InteractiveAI.Frontend/wwwroot/js/voice-ui.js', 'utf8');
+const be = readFileSync('./src/InteractiveAI.Backend/Services/WoService.cs', 'utf8');
+const ent = readFileSync('./src/InteractiveAI.Backend/Models/DB/WorkOrder.cs', 'utf8');
+const mc = readFileSync('./src/InteractiveAI.Backend/Controllers/MasterController.cs', 'utf8');
+const msvc = readFileSync('./src/InteractiveAI.Backend/Services/MasterService.cs', 'utf8');
+const tts = readFileSync('./src/InteractiveAI.Backend/Services/EdgeTtsService.cs', 'utf8');
+const layouts = readFileSync('./src/InteractiveAI.Frontend/Views/Shared/_Layout.cshtml', 'utf8');
+const vview = readFileSync('./src/InteractiveAI.Frontend/Views/Vision/Index.cshtml', 'utf8');
+const viewsrc = readFileSync('./src/InteractiveAI.Frontend/Views/Chat/Index.cshtml', 'utf8');
+const scss = readFileSync('./src/InteractiveAI.Frontend/wwwroot/css/site.css', 'utf8');
+const acss = readFileSync('./src/InteractiveAI.Frontend/wwwroot/css/loket-aura.css', 'utf8');
+check('interseptor WO tanpa navigasi (orb tak hilang)', !usrc.includes("goto('wo')"), true);
+const s3 = vsrc.indexOf('const GUIDE_CHUNK_CHARS');
+const e3 = vsrc.indexOf('function guideSpeak');
+if (s3 < 0 || e3 < 0) throw new Error('guideChunk tidak ditemukan di vision.js');
+vm.runInContext(vsrc.slice(s3, e3), sandbox);
+const { guideChunk } = sandbox;
+const gParts = guideChunk(long);
+check('vision.js: teks panjang dipecah', gParts.length > 1, true);
+check('vision.js: potongan <= 160 char', gParts.every(p => p.length <= 160), true);
+check('vision.js: tidak ada kata hilang', gParts.join(' ').replace(/\s+/g, ' ').trim(), long.replace(/\s+/g, ' ').trim());
+
+
+const numOf = (re) => {
+  const m = src.match(re);
+  return m ? parseFloat(m[1]) : NaN;
+};
+
+const tail = numOf(/(?:const|let) AI_TAIL_MS\s*=\s*([\d.]+)/);
+check('ekor <= 1000ms (kata pertama user tak dimakan mute)', tail <= 1000, true);
+const userLvl = numOf(/(?:const|let) USER_SPEAK_LEVEL\s*=\s*([\d.]+)/);
+check('USER_SPEAK_LEVEL >= 0.06 (noise mesin tak ke-trigger)', userLvl >= 0.06, true);
+const barge = numOf(/(?:const|let) BARGE_THRESHOLD\s*=\s*([\d.]+)/);
+check('BARGE_THRESHOLD <= 0.12 (suara pelan bisa menyela)', barge <= 0.12, true);
+check('onresult pakai gen capture (bukan listenGen terkini)', src.includes('const myGen = gen;'), true);
+check('onresult TIDAK pakai myGen basi', !src.includes('const myGen = listenGen'), true);
+check('textbox pakai interim terkini', src.includes("(finalBuffer + ' ' + newInterim).trim()"), true);
+check('textbox TIDAK pakai prevInterim basi', !src.includes("prevInterim).trim()"), true);
+check('scheduleRestart tahan saat AI bicara', src.includes('!continuousOn || listening || aiSpeaking'), true);
+check('stopListening tahan restart saat AI bicara', src.includes('if (continuousOn && !aiSpeaking) scheduleRestart()'), true);
+check('ekor adaptif ada (maybeEarlyOpenTail)', src.includes('function maybeEarlyOpenTail'), true);
+check('trackUserSpeech panggil ekor adaptif', src.includes('maybeEarlyOpenTail(lvl)'), true);
+check('neuralSpeak pipeline per klausa (cepat bunyi)', src.includes('groupClauses(splitClauses(clean))'), true);
+check('groupClauses ada (batasi request)', src.includes('function groupClauses'), true);
+check('playNeuralClause rantai batch', src.includes('function playNeuralClause'), true);
+check('gate nopol awaitingPlate ada', src.includes('awaitingPlate'), true);
+check('pemicu plat longgar ada', src.includes('PLATE_HINT_RE'), true);
+check('persona minta eja nopol', src.includes('satu per satu'), true);
+check('modal perbaikan pensiun', !src.includes('openRepairModal') && !src.includes('repairModal'), true);
+check('form keluhan baris ada', src.includes('fKeluhan') && src.includes('sendKeluhan') && src.includes('[KELUHAN '), true);
+check('nopol header sinkron', src.includes('plateHead') && src.includes('setFormHead') && src.includes('fillWoNumbers'), true);
+check('form bertahan pasca-save', src.includes('w.unitNumber') && src.includes('row.querySelector'), true);
+check('marker WO_SIAP ada', src.includes('WO_SIAP'), true);
+check('auto-save idempoten ada', src.includes('woSavedFor'), true);
+check('toast ada', src.includes('showToast'), true);
+check('marker QR/terminal ada', src.includes('SELESAI_ADMIN_WO') && src.includes('QR_MENANG'), true);
+check('handleQr cek KacsGps', src.includes('/Chat/QrLookup'), true);
+check('streaming SSE ada', src.includes('/Chat/StreamSend') && src.includes('sendStream'), true);
+check('TTS inkremental ada', src.includes('streamAudioLoop') && src.includes('queueStreamClause'), true);
+check('fallback klasik ada', src.includes("'fallback'"), true);
+check('filler cek nopol ada', src.includes('speakAwait') && src.includes('FILLER_TEKS'), true);
+check('filler hanya plat ketat', src.includes('isStrictPlate'), true);
+check('eskalasi QR saat gagal 2x', src.includes('MASTER_FAIL_QR_AT') && src.includes('qrUsedForVerify'), true);
+check('kalibrasi adaptif ada', src.includes('calibrateNoise') && src.includes('applyNoiseFloor'), true);
+check('hold-to-talk ada', src.includes('pttStart') && src.includes('pttEnd'), true);
+check('ptt backend mulai rekam eksplisit', src.includes('const backendPtt = sttBackendActive()') && src.includes('markUserSpeech()') && src.includes('startSttCapture()'), true);
+check('ptt backend tak butuh SR browser', src.includes('if (!backendPtt && !SR)') && src.includes('Mic tidak tersedia — cek izin & perangkat mic'), true);
+const backendVad = src.slice(src.indexOf('function trackVadBackend'), src.indexOf('function trackVadBackend') + 900);
+check('ptt backend lewati ambang level', backendVad.includes('if (pttActive) {') && backendVad.includes('startSttCapture()'), true);
+check('threshold bising margin relatif', src.includes('noiseFloor + (noisyMode ? 0.05') && src.includes('noisyMode = noiseFloor > 0.09'), true);
+check('kalibrasi basi bisa dihapus', src.includes("localStorage.removeItem('loketNoise')") && src.includes('Kalibrasi tersimpan dihapus'), true);
+check('ptt kosong bersuara jujur', src.includes('Suara terlalu pelan/tidak masuk'), true);
+check('debug wav terakhir tersimpan', src.includes('rememberSttDebug') && src.includes('URL.createObjectURL'), true);
+check('engine + unduhan di overlay', src.includes('calEngine') && src.includes('calWavDl') && src.includes('stt-terakhir.wav'), true);
+check('label mic aktif di overlay', src.includes('calMic') && src.includes('getAudioTracks'), true);
+check('flag denoise dikirim frontend', src.includes("fd.append('denoise'"), true);
+check('toggle hush tersimpan', src.includes('loketHushOff') && src.includes('calHush'), true);
+const stt = readFileSync('./src/InteractiveAI.Backend/Controllers/SttController.cs', 'utf8');
+check('backend hormati flag denoise', stt.includes('[FromForm] string? denoise') && stt.includes('"0"'), true);
+check('saklar whisper ada', stt.includes('Whisper.Enabled') && stt.includes('STT backend dimatikan'), true);
+check('status expose whisperEnabled', stt.includes('whisperEnabled'), true);
+check('lookup view saja total', msvc.includes('VwAllUnitV3s') && !msvc.includes('LookupKacsAsync') && !msvc.includes('FindDriverAsync'), true);
+check('kontrak view lengkap', msvc.includes('IsTerpairing') && msvc.includes('DriverCode') && msvc.includes('ViewNameMatches'), true);
+check('api expose view', mc.includes('isTerpairing') && mc.includes('driverCode'), true);
+check('save hormati sopir-menang', be.includes('[NAMA_SOPIR]') && be.includes('driverWins'), true);
+check('mismatch diterima apa adanya', src.includes('NAMA DITERIMA APA ADANYA') && src.includes('[NAMA_SOPIR]') && !src.includes('viewDriverWin = {'), true);
+check('tanpa konfirmasi nama', !src.includes('NAMA BERBEDA') && !src.includes('const YES_RE'), true);
+check('marker sopir di-strip', src.includes('PILIH_LAYANAN|NAMA_SOPIR'), true);
+check('backend lolos nama kosong', be.includes('!master.DriverMissing'), true);
+check('gate verifikasi ada', src.includes('findUncoveredVerify') && src.includes('blockUncoveredClose'), true);
+check('pola tanya-catat ada', src.includes('VERIFY_RE') && src.includes('kecatat'), true);
+check('tutup ditahan sebelum save', src.includes('if (!blockUncoveredClose(rawResp)) saveWoAuto()'), true);
+check('marker tahan di-strip', src.includes('TAHAN PENUTUPAN'), true);
+check('auto-koreksi sekali per subjek', src.includes('closeBlockedKeys'), true);
+check('persona anti-klaim-palsu', src.includes('JANGAN pernah mengklaim'), true);
+const wc = readFileSync('./src/InteractiveAI.Backend/Controllers/WoController.cs', 'utf8');
+check('daftar WO duplikat ada', be.includes('KimoWoListAsync') && be.includes('PrePerbaikanDesc'), true);
+check('kimo-exists bawa wos', wc.includes('wos'), true);
+check('rekap duplikat di bubble', src.includes('function onWoDuplicate(qr, wos)') && src.includes('dupRecapText'), true);
+check('tanya cukup atau tambah', src.includes('sudah cukup atau ada tambahan'), true);
+check('marker cukup ada', src.includes('WO_CUKUP'), true);
+check('handler cukup tanpa save', src.includes('WO_OK_RE') && src.includes('WO sudah ada — tidak buat baru.'), true);
+check('marker cukup di-strip', src.includes('WO_SIAP|WO_CUKUP'), true);
+check('persona tanpa tanya kode', !src.includes('kode driver lama opsional'), true);
+check('cocok langsung keluhan', src.includes('langsung tanyakan keluhannya'), true);
+check('note tanpa kode-wajib', !src.includes('satu-duanya'), true);
+check('kode dorman dihapus', !src.includes('KODE_FORGOT_RE') && !src.includes('kodeForgotNote'), true);
+check('marker kode di-strip', src.includes('SAVE_GAGAL|KODE_TAK_DIKETAHUI'), true);
+check('vkb ditunda via arm', (src.match(/armVkb\(\)/g) || []).length >= 5, true);
+check('tanpa buka langsung di cek', (() => { const a = src.indexOf('async function checkMasterNote'); const b = src.indexOf('let lastQrSent = null;', a); return a > 0 && b > a && !src.slice(a, b).includes('showVKB'); })(), true);
+check('flush setelah suara', (src.match(/flushVkbPending\(\)/g) || []).length >= 4, true);
+check('flag vkb dibersihkan', (src.match(/vkbPendingShow = false;/g) || []).length >= 5, true);
+check('vkb sembunyi saat kirim baru', /async function send\(\)[\s\S]{0,200}hideVKB\(\);/.test(src), true);
+check('vkb sembunyi saat respons AI mulai', /function afterAssistant\(rawResp\) \{\s*hideVKB\(\);/.test(src), true);
+check('vkb sembunyi saat QR baru', /lastQrSent = text;\s*hideVKB\(\);/.test(src), true);
+check('barge batalkan vkb pending', (src.match(/vkbPendingShow = false;\s*\n\s*setStatus\('Disela sopir/g) || []).length >= 3, true);
+check('barge stream batalkan vkb', /streamActive = null;\s*vkbPendingShow = false;\s*sessionId = di\.sessionId/.test(src), true);
+check('fallback stream tetap flush vkb', /function streamBrowserDone\(\) \{\s*flushVkbPending\(\);/.test(src), true);
+check('filler cari data kaku', src.includes("'Saya akan cari datanya dulu ya'") && src.includes("showToast('Mengecek ke bank data...'"), true);
+check('template konfirmasi kaku', src.includes('Benar ya bang?') && src.includes('jenis truknya ${j.truckType}') && src.includes('Bisa di ulangi nopolnya dengan cara di eja lagi bang?'), true);
+check('watchdog keluhan ada', src.includes('KELUHAN_NORESP_MS') && src.includes('function startKeluhanWatch') && src.includes('function closeKeluhanWatch'), true);
+check('watchdog 15 detik x8', src.includes('KELUHAN_NORESP_MS = 15000') && src.includes('KELUHAN_NORESP_MAX = 8'), true);
+check('tanya-ulang kaku', src.includes("KELUHAN_ASK = 'Bisa dijelaskan dari truk apa yang mau di periksa atau di perbaiki bang?'"), true);
+check('tutup-tanpa-keluhan kaku', src.includes("KELUHAN_CLOSE = 'Baik bang, jika tidak ada keluhan maka percakapan ini ditutup.'"), true);
+check('tutup sunyi 5 detik ke gate', src.includes('KELUHAN_CLOSE_DELAY_MS = 5000') && /function closeKeluhanWatch\(\)[\s\S]{0,600}resetToGate\(\)/.test(src), true);
+check('watchdog mulai setelah ucapan', (src.match(/maybeStartKeluhanWatch\(\);/g) || []).length >= 3, true);
+check('respon sopir hentikan watchdog', /async function send\(\)[\s\S]{0,200}stopKeluhanWatch\(\);/.test(src), true);
+check('reset hentikan watchdog', (src.match(/stopKeluhanWatch\(\);/g) || []).length >= 6, true);
+check('arm hanya saat ya-confirm', (src.match(/keluhanWatchArmed = true;/g) || []).length === 1, true);
+check('pending confirm ada', src.includes('let pendingPlateWin = null;') && src.includes('CONFIRM_YES_RE') && src.includes('CONFIRM_NO_RE') && src.includes('function ejaNopol'), true);
+check('ya-confirm verifikasi', /pendingPlateWin && CONFIRM_YES_RE[\s\S]{0,600}masterVerifiedOk = true;/.test(src) && /NOPOL DIKONFIRMASI SOPIR[\s\S]{0,400}Bisa dijelaskan dari truk apa yang mau di periksa atau di perbaiki bang\?/.test(src), true);
+check('pending bersih di semua reset', (src.match(/pendingPlateWin = null;/g) || []).length >= 7, true);
+check('seragam bang tanpa bapak', !/[Bb]apak/.test(src) && !/[^A-Za-z]pak[^A-Za-z]/i.test(src), true);
+const fsStart = src.indexOf('function forSpeech(s) {');
+const fsEnd = src.indexOf('const SR =', fsStart);
+if (fsStart < 0 || fsEnd < 0) throw new Error('Blok forSpeech tidak ditemukan di chat.js');
+const sandboxFs = {};
+vm.createContext(sandboxFs);
+vm.runInContext(src.slice(fsStart, fsEnd) + '\nthis.forSpeech = forSpeech;', sandboxFs);
+const { forSpeech } = sandboxFs;
+check('tts buang koma', forSpeech('Oke B 9 0 0 2 U X U, jenis truknya Jumbo. Benar ya bang?'), 'Oke B 9 0 0 2 U X U jenis truknya Jumbo. Benar ya bang?');
+check('tts tanpa koma utuh', forSpeech('Bisa dijelaskan dari truk apa yang mau di periksa atau di perbaiki bang?'), 'Bisa dijelaskan dari truk apa yang mau di periksa atau di perbaiki bang?');
+check('tts tanpa spasi ganda', forSpeech('Baik bang,  jika tidak ada keluhan').includes('  '), false);
+check('strict tulis state + bersih pending', /if \(strict\) \{\s*lastPlateText = strict\.display;\s*awaitingName = false;\s*viewDriverWin = null;/.test(src), true);
+check('persona tanpa tanya nama', !/tanyakan nama lengkap|tanyakan HANYA nama/.test(src), true);
+check('cabang info-kode dihapus', !src.includes('KODE_INFO_RE') && !src.includes('[INFO KODE'), true);
+check('tanpa jejak save-ditahan', !src.includes('[SAVE_DITAHAN:') && src.includes('stashSysNote'), true);
+check('jejak save-gagal ada', src.includes('[SAVE_GAGAL:'), true);
+check('jejak ikut terkirim', src.includes('takeSysNotes()'), true);
+check('jejak di-strip', src.includes('SAVE_DITAHAN|SAVE_GAGAL'), true);
+check('jejak reset per sesi', (src.match(/pendingSysNotes = \[\];/g) || []).length >= 4, true);
+check('nama susulan diproses', src.includes('awaitingName') && src.includes('lastPlateText'), true);
+check('mismatch langsung terverifikasi', /setFormHead\(j\.nopol, '', j\.truckType\)[\s\S]{0,300}NAMA DITERIMA APA ADANYA/.test(src), true);
+check('tanpa pending mismatch', !src.includes('viewDriverWin = {') && !src.includes('viewDriverWin.key'), true);
+check('nama bicara tak tampil di form', src.includes("setFormHead(j.nopol, '', j.truckType)"), true);
+check('typo nama diterima', msvc.includes('Levenshtein(t, w) <= 1'), true);
+check('beda total tetap mismatch', msvc.includes('ViewNameMatches') && msvc.includes('return false;'), true);
+check('awaitingName di ladder/gagal', (src.match(/awaitingName = true;/g) || []).length >= 4, true);
+check('persona langsung ke keluhan', src.includes('langsung tanyakan keluhannya'), true);
+check('nama kosong tak lolos pair', msvc.includes('!string.IsNullOrWhiteSpace(fullName)'), true);
+const cc = readFileSync('./src/InteractiveAI.Frontend/Controllers/ChatController.cs', 'utf8');
+check('endpoint versi ada', cc.includes('/Chat/Version') && cc.includes('jsHash'), true);
+check('polling versi ada', src.includes('pollJsVersion') && src.includes('Ada versi baru'), true);
+check('watch berhenti per sesi', (src.match(/stopVersionWatch\(\);/g) || []).length >= 3, true);
+check('pola koreksi nopol ada', src.includes('PLATE_CORRECT_RE'), true);
+check('koreksi buka keyboard', src.slice(src.indexOf('PLATE_CORRECT_RE.test'), src.indexOf('PLATE_CORRECT_RE.test') + 700).includes('armVkb()'), true);
+check('koreksi bersihkan pending', /PLATE_CORRECT_RE\.test\(userText[\s\S]{0,200}viewDriverWin = null/.test(src), true);
+check('mismatch tanpa keyboard nama', (() => { const a = src.indexOf('if (j.found && !j.pairMatched && !j.driverMissing)'); const b = src.indexOf('masterFailCount++;', a); return a > 0 && b > a && !src.slice(a, b).includes('showVKB'); })(), true);
+check('tak-terbaca buka keyboard', src.includes('plateUnreadCount >= MASTER_FAIL_VKB_AT) armVkb()'), true);
+check('kunci rekap ada', src.includes('setRecapLock') && src.includes('[REKAP]'), true);
+check('lock lepas pasca-ucapan', (src.match(/setRecapLock\(false\)/g) || []).length >= 4, true);
+check('STT dibuang saat lock', (src.match(/recapLock/g) || []).length >= 8, true);
+check('PTT ditolak saat lock', src.includes('Rekap sedang dibacakan'), true);
+check('mic mati di reset', src.slice(src.indexOf('function resetSessionGate'), src.indexOf('function resetSessionGate') + 900).includes('setContinuous(false)'), true);
+check('send tolak saat tak-started', src.slice(src.indexOf('async function send()'), src.indexOf('async function send()') + 200).includes('if (!started) return;'), true);
+check('sapa hanya via Mulai', !src.includes('if (!autoGreeted) await autoGreet()') && src.includes('if (started && !autoGreeted) await autoGreet()'), true);
+check('marker rekap di-strip', src.includes('NAMA_SOPIR|REKAP') || src.includes('WO_CUKUP|REKAP'), true);
+const hush = readFileSync('./src/InteractiveAI.Backend/Services/HushDenoiseService.cs', 'utf8');
+const appjson = readFileSync('./src/InteractiveAI.Backend/appsettings.json', 'utf8');
+check('auto-gain kalibrasi suara', src.includes('calibrateVoice') && src.includes('Kalibrasi suara'), true);
+check('hush atten configurable', hush.includes('AttenLimDb'), true);
+check('config atten tersedia', appjson.includes('AttenLimDb'), true);
+check('pemilih mic ada', src.includes('calMicSel') && src.includes('enumerateDevices'), true);
+check('mic pilihan tersimpan', src.includes('loketMic'), true);
+check('persona bising dinamis', src.includes('voicePrompt'), true);
+check('STT backend ada', src.includes('/Chat/Stt') && src.includes('finalizeSttCapture'), true);
+check('fallback STT browser ada', src.includes("sttMode = 'browser'"), true);
+check('routing mic bising ada', src.includes('micAgc') && src.includes('releaseVadMic'), true);
+check('visual speaking gate ada', src.includes('visGatePass') && src.includes('__visual'), true);
+check('otoritas mulut untuk teks ada', src.includes('visMouthRecent') && src.includes('lastSpeakAt'), true);
+check('umumkan WO tunggu hening', src.includes('waitForQuiet') && src.includes('woAnnounceSeq'), true);
+check('preferensi suara browser ada', src.includes('browserVoicePref') && src.includes('/Chat/VoiceStatus'), true);
+check('jalur suara dikunci per sesi', src.includes('lockedVoice') && src.includes('effectiveVoice'), true);
+check('SATU resolver cfg suara', (src.match(/ensureVoiceLock\(\)/g) || []).length >= 3 && src.includes('lockedCfg'), true);
+check('gerbang mulut fail-closed', src.includes("!v.face) return false") && src.includes("mode !== 'on'"), true);
+check('avatar user ikon person', src.includes('fa-solid fa-user'), true);
+check('cek kimo sebelum simpan WO', src.includes('/Chat/KimoExists') && src.includes('onWoDuplicate'), true);
+check('qr hantu dibersihkan', src.includes('u200B') && src.includes('const raw = (qrCodes[0].text'), true);
+check('toast pesan bersih', src.includes('JSON.parse(msg)') && src.includes('inner.error'), true);
+check('persona tanpa contoh QR mentah', !src.includes('QR KIMO: ...'), true);
+check('keypad virtual ada', src.includes('buildVKB') && src.includes('vkbKeys') && src.includes('showVKB'), true);
+check('keypad dibuka saat nopol gagal', src.includes('showVKB()') && src.includes('MASTER_FAIL_QR_AT'), true);
+check('gagal total master ke loket manusia', src.includes('SELESAI_LOKET_WO') && src.includes('MASTER_FAIL_MAX'), true);
+check('WO gagal arahkan loket manusia', src.includes('onWoFailed') && src.includes('resetToGate()'), true);
+check('sapaan QR-first', src.includes('saya Mira dari Loket Bengkel. Apakah abang punya QR Code dari aplikasi Kimo?'), true);
+check('tanya nopol eja per huruf', src.includes('B 9 0 0 2 U X U'), true);
+check('tak-punya-QR tanya nama nopol', /TIDAK PUNYA\/TIDAK ADA QR[\s\S]{0,600}tanyakan nama dan nopol truk/.test(src), true);
+check('langkah 1b nama nopol sekaligus', /Langkah 1b \(tanpa QR\): tanyakan NAMA dan NOPOL/.test(src), true);
+check('QR acuan lewati interview', src.includes('JADIKAN ACUAN') && src.includes('LEWATI tanya nama'), true);
+check('duplikat stop saat scan', src.includes('onWoDuplicate(text, dupWos)'), true);
+check('tanpa QR interview manual', src.includes('Langkah 1b'), true);
+check('semua via AI agent (tanpa modal)', !src.includes('srvModal') && !src.includes('dupModal') && !src.includes('pickDupHuman'), true);
+check('modal hilang dari view', !viewsrc.includes('srvModal') && !viewsrc.includes('dupModal'), true);
+check('duplikat auto lanjut agent', src.includes('function onWoDuplicate') && src.includes('pickDupAgent(qr, wos)'), true);
+check('tak-punya-QR langsung tanya nama nopol', src.includes('LANGSUNG di giliran yang sama tanyakan nama dan nopol truk') && !src.includes('[PILIH_LAYANAN] (layar'), true);
+check('marker basi tetap di-strip', src.includes('PILIH_LAYANAN') && src.includes('LAYANAN_RE'), true);
+check('eskalasi kegagalan tetap ada', src.includes('onWoFailed') && src.includes('LOKET_DONE_RE') && src.includes('ADMIN_DONE_RE'), true);
+check('persona baris form', src.includes('[KELUHAN Kategori: isi]'), true);
+check('follow scroll ke container chat', src.includes('function followChatBottom()') && src.includes('cb.scrollTop = cb.scrollHeight') && src.includes('followChatBottom();'), true);
+check('bubble tak pakai scrollIntoView', !src.includes('div.scrollIntoView') && !src.includes('finishSayEl.scrollIntoView'), true);
+check('guard anti rebut scroll', src.includes('cb.scrollHeight - cb.scrollTop - cb.clientHeight < 140'), true);
+check('visualizer di-throttle', usrc.includes('tickLast') && usrc.includes('now - tickLast < 66'), true);
+check('bubble flat tanpa blur', !src.includes('glass-panel p-3.5'), true);
+check('watchdog recognition', src.includes('lastResultAt') && src.includes('Mic dimulai ulang otomatis'), true);
+check('mic mati bersuara', src.includes('Mic dibisukan OS') && src.includes('onended'), true);
+check('AGC default nyala', src.includes('let micAgc = true'), true);
+check('visual bersuara', vsp.includes('lastError') && vsp.includes('console.warn'), true);
+check('toast vonis spesifik', src.includes('Modul visual belum termuat'), true);
+check('watchdog gerbang wajah', src.includes('noteGateDrop') && src.includes('tahan tombol mic'), true);
+check('endpoint hening 1000ms', src.includes('VAD_SILENCE_SEND_MS = 1000'), true);
+check('grace final tunggu selesai', src.includes('FINAL_GRACE_MS') && src.includes('lastSpeechAt') && src.includes('finalSettled'), true);
+check('regex lama mati', !src.includes('REPAIR_ASK_RE') && !src.includes('maybeAutoRepairModal'), true);
+check('kunci anti-sela', src.includes('let noBarge') && src.includes('if (noBarge) return;'), true);
+check('tutup lewat layar konfirmasi', src.includes('showWoDone(w, mySeq)') && !src.includes('setTimeout(later, 3000)'), true);
+const gateBlock = src.slice(src.indexOf('function resetSessionGate'), src.indexOf('function resetSessionGate') + 600);
+check('wipe saat pulang ke gate', gateBlock.includes("innerHTML = ''"), true);
+check('sesi mati tolak giliran', src.includes('let closing') && src.includes('if (!sessionId && closing) return;'), true);
+check('tanpa konsep SR', !src.includes('buat SR') && !src.includes('status SR'), true);
+check('modal pilih layanan', !src.includes('pickSrvAgent') || src.includes('LAYANAN_RE.test(rawResp') && src.includes('pickSrvAgent()'), true);
+check('nama driver persis KIMO', src.includes('WAJIB disebut persis') && src.includes('NamaDriver'), true);
+check('wajib tutup giliran', src.includes('WAJIB diakhiri dengan satu pertanyaan'), true);
+check('picu keluhan-lain eksplisit', src.includes('masih ada keluhan lain'), true);
+check('AI larang suruh isi form', src.includes('JANGAN pernah menyuruh sopir mengisi') && src.includes('catatan sistem, bukan tugas sopir'), true);
+check('tujuh kategori seragam', src.includes('Truk, Reefer, Cabin, GPS, Genset, Box, Ban'), true);
+check('akumulasi kategori sama', src.includes('catat sebagai tambahan pada kategori itu'), true);
+check('form terisi dari suara', src.includes('fillKeluhanRows') && src.includes('w.keluhanRows'), true);
+check('backend gabung form+suara', be.includes('keluhanMap') && be.includes('SplitComplaintSegments'), true);
+check('baris ketik ganda menumpuk', be.includes('out_[cat] = cur + "; " + val'), true);
+check('respons bawa keluhanRows', ent.includes('KeluhanRows') && ent.includes('NotMapped'), true);
+check('gerbang mulut mati', src.includes('let mouthGateOn = false'), true);
+check('bedakan cocok persis', src.includes('j.matchExact === false') && src.includes('j.nopolHeard'), true);
+check('tolak populate saat tak exact', src.indexOf('matchExact === false') < src.indexOf('setFormHead(j.nopol'), true);
+check('vkb di 2x gagal minta QR', src.includes('const MASTER_FAIL_QR_AT = 2'), true);
+check('vkb dibuka di kegagalan pertama', src.includes('const MASTER_FAIL_VKB_AT = 1') && src.includes('if (masterFailCount >= MASTER_FAIL_VKB_AT) armVkb()'), true);
+check('bail senyap tak terbaca dibuang', !src.includes('if (!r.ok || !j.candidate) return'), true);
+check('jalur tak terbaca punya note + keyboard', src.includes('NOPOL BELUM TERBACA') && src.includes('plateUnreadCount++;'), true);
+check('counter tak terbada terpisah dari failcount', /let masterFailCount = 0;\s*let plateUnreadCount = 0;/.test(src), true);
+check('tak terbaca tak bisa picu give-up', src.indexOf('NOPOL BELUM TERBACA') > 0 && src.indexOf('NOPOL BELUM TERBACA') < src.indexOf('MASTER_FAIL_MAX'), true);
+check('give-up tetap 4x', src.includes('const MASTER_FAIL_MAX = 4') && src.includes('GAGAL TOTAL'), true);
+check('reset unread di semua titik', (src.match(/plateUnreadCount = 0;/g) || []).length >= 8, true);
+check('vkb tak lompat saat dipanggil ulang', src.includes("const wasHidden = p.style.display !== 'block'"), true);
+check('percobaan tampil di toast', src.includes("'Nopol belum ketemu (percobaan ' + masterFailCount"), true);
+check('persona: keyboard di kegagalan pertama', src.includes('Pada kegagalan nopol PERTAMA sistem otomatis membuka keyboard'), true);
+check('ketik manual reset counter', /const submit = \(\) => \{\s*masterFailCount = 0;/.test(src), true);
+check('vkb melayang fixed', /#vkb\{[^}]*position:fixed/.test(acss) && /#vkb\{[^}]*z-index:1040/.test(acss), true);
+check('vkb bisa digeser', src.includes('enableVkbDrag') && src.includes('p.dataset.drag') && viewsrc.includes('id="vkbHead"'), true);
+check('vkb drag dari panel, bukan cuma header', /function enableVkbDrag\(\)[\s\S]{0,1200}p\.addEventListener\('pointermove'/.test(src) && !/head\.addEventListener\('pointer(move|down|up)'/.test(src), true);
+check('drag pakai ambang (tak ketik saat geser)', src.includes('VKB_DRAG_THRESHOLD') && src.includes('vkbDragSuppress = true'), true);
+check('tombol vkb aksi di pointerup', src.includes("b.addEventListener('pointerup'") && src.includes('if (vkbDragSuppress) return;'), true);
+check('drag tak lompat pas tap', src.indexOf('VKB_DRAG_THRESHOLD') < src.indexOf('p.style.left = r.left'), true);
+check('capture hanya setelah drag aktif (tombol tak kehilangan pointerup)', /function enableVkbDrag\(\)[\s\S]{0,1400}setPointerCapture/.test(src) && !/pointerdown', \(e\) => \{[\s\S]{0,300}setPointerCapture/.test(src), true);
+check('posisi vkb diingat', src.includes('vkbPos') && src.includes('vkbPos.left'), true);
+check('vkb di luar glass-panel (fixed tak dikunci ancestor)', !viewsrc.slice(viewsrc.indexOf('loket-form'), viewsrc.indexOf('loket-chat glass-panel')).includes('id="vkb"') && viewsrc.indexOf('id="vkb"') > viewsrc.indexOf('id="chatView"'), true);
+check('chat bisa collapse', viewsrc.includes('id="btnChatToggle"') && viewsrc.includes('id="chatPanel"') && acss.includes('.chat-open'), true);
+check('default css = tertutup', /\.loket-chat #chatBox,\.loket-chat \.loket-chat-quick\{display:none\}/.test(acss), true);
+check('buka hanya lewat :root class', /\.chat-open \.loket-chat #chatBox\{display:flex\}/.test(acss), true);
+check('state di html, bukan di section', src.includes("classList.toggle('chat-open', !chatCollapsed)") && !src.includes("panel.classList.toggle('collapsed'"), true);
+check('default js = collapsed', /let chatCollapsed = true;/.test(src), true);
+check('hanya toggle yang buka/tutup', (src.match(/chatCollapsed = !chatCollapsed;/g) || []).length === 1 && src.includes('function toggleChatPanel()'), true);
+check('re-apply di semua perpindahan', (src.match(/applyChatView\(\);/g) || []).length >= 5, true);
+check('collapse remembered', src.includes("'loketChatOpen'") && src.includes('localStorage.setItem(CHAT_OPEN_KEY'), true);
+check('badge pesan baru', src.includes('chatHiddenCount++') && viewsrc.includes('id="chatNewBadge"'), true);
+check('preview pesan terakhir', src.includes('noteChatActivity') && viewsrc.includes('id="chatPreview"'), true);
+check('toast saat collapsed tak menambah tinggi', /function showToast\(msg, kind\) \{\s*if \(chatCollapsed\) \{[\s\S]{0,200}setStatus\(msg\);/.test(src), true);
+check('preview ketikan saat collapsed', /function syncTypingBubble\(\)[\s\S]{0,200}chatCollapsed && val\) setChatPreview/.test(src), true);
+check('tinggi strip terkunci (judul 1 baris)', /\.loket-chat-title\{[^}]*line-height:21px/.test(acss), true);
+check('tinggi baris preview terkunci', /\.loket-chat-preview\{[^}]*min-height:18px[^}]*max-height:18px/.test(acss) && /\.loket-chat-preview\{[^}]*line-height:18px/.test(acss), true);
+check('scroll anchoring dimatikan di panel', /\.loket-chat\{[^}]*overflow-anchor:none/.test(acss) && /\.loket-side\{[^}]*overflow-anchor:none/.test(acss), true);
+check('scroll riwayat mati saat tertutup', /function followChatBottom\(\) \{\s*if \(chatCollapsed\) return;/.test(src), true);
+check('badge tak membungkus (qr + kamera)', /\.loket-qr-value\{[^}]*white-space:nowrap/.test(acss) && /\.ai-badge\{[^}]*white-space:nowrap[^}]*text-overflow:ellipsis/.test(scss), true);
+check('catatan sistem berbagi baris preview', (src.match(/noteSystem\(/g) || []).length >= 4 && /function noteSystem\(msg\)[\s\S]{0,300}setChatPreview\(msg\)/.test(src), true);
+check('tak ada scroll programmatic halaman', !/scrollIntoView|window\.scrollTo|document\.body\.scrollTop|documentElement\.scrollTop/.test(src), true);
+check('chat full-bleed via kelas layout', acss.includes('.ai-phone-wide') && /max-width:none;width:100%;margin:0;border-radius:0;border:0;box-shadow:none/.test(acss), true);
+check('bingkai chat/transparansi', /\.ai-phone-wide\{[^}]*min-height:100vh/.test(acss) && /\.ai-phone-wide\{[^}]*rgba\(20,8,40,\.84\)/.test(acss), true);
+check('penanda lewat ViewData', layouts.includes('ai-phone-wide') && layouts.includes('ViewData["LoketWide"]') && viewsrc.includes('ViewData["LoketWide"] = true'), true);
+check('face detection tak ikut full-bleed', !vview.includes('LoketWide') && viewsrc.includes('LoketWide') === true, true);
+check('bingkai hape utuh untuk halaman lain', /\.ai-phone\{[^}]*max-width:430px/.test(scss) && /@media\(min-width:768px\)\{\.ai-phone\{[^}]*border-radius:28px[^}]*margin:1\.2rem auto/.test(scss), true);
+check('tidak ada andal :has() lagi', !acss.includes('.ai-phone:has(') && !acss.includes('max-width:1500px'), true);
+
+const light = readFileSync('./src/InteractiveAI.Frontend/wwwroot/css/loket-light.css', 'utf8');
+check('file light ada & terpisah', light.length > 0 && acss.includes('.ai-phone-wide') && !acss.includes('data-theme'), true);
+check('light dimuat setelah aura', layouts.indexOf('loket-light.css') > layouts.indexOf('loket-aura.css'), true);
+check('skrip head anti kedip', /<script>try\{if\(localStorage\.getItem\('loketTheme'\)/.test(layouts) && layouts.indexOf("loketTheme") < layouts.indexOf('site.css'), true);
+check('tombol tema ada di header chat', viewsrc.includes('id="btnTheme"') && viewsrc.includes('id="iconTheme"'), true);
+check('applyTheme baca/tulis storage', src.includes("const THEME_KEY = 'loketTheme'") && src.includes('localStorage.setItem(THEME_KEY') && src.includes("setAttribute('data-theme'"), true);
+check('tombol tema terpasang & di-apply ulang', /btnTheme\.onclick = toggleTheme/.test(src) && (src.match(/applyTheme\(\);/g) || []).length >= 3, true);
+check('light override pakai awalan atribut', /^\[data-theme="light"\]/m.test(light) && light.split('[data-theme="light"]').length > 30, true);
+check('variabel inti lengkap di light', ['--bg', '--bg2', '--card', '--card2', '--line', '--txt', '--mut', '--ok', '--warn', '--bad']
+    .every((v) => light.includes(v + ':')), true);
+check('silau latar diredupkan', /\[data-theme="light"\]\s*\.ai-bg-glow\s*\{[^}]*opacity:\s*\.16/.test(light), true);
+check('jaring dark-mode utuh', scss.includes('--bg:#0a0614') && scss.includes('max-width:430px') && acss.includes('rgba(20,8,40,.84)') && !scss.includes('[data-theme'), true);
+check('aksen dipertahankan di light', !light.includes('--purple:') && !light.includes('--pink:'), true);
+check('baris label form dihapus total', !viewsrc.includes('loket-fhead') && !acss.includes('loket-fhead') && !light.includes('loket-fhead'), true);
+check('garis pemisah pindah ke baris pertama', /\.loket-form>\.loket-frow:first-of-type\{[^}]*border-top:2px solid rgba\(148,163,184,\.25\)/.test(acss) && /\[data-theme="light"\] \.loket-form>\.loket-frow:first-of-type \{[^}]*border-top-color/.test(light), true);
+
+const ACCENT_ALLOWLIST = new Set([
+    'bg-cyan-600/30', 'bg-purple-600/30', 'bg-purple-600/40', 'from-cyan-500', 'from-purple-400',
+    'from-purple-500', 'from-purple-600', 'to-blue-600', 'to-cyan-200', 'to-cyan-400', 'to-indigo-500',
+    'to-indigo-600', 'bg-emerald-400', 'bg-purple-400', 'shadow-purple-900/30', 'shadow-purple-500/30',
+    'border-purple-500', 'ring-purple-500', 'bg-cyan-950/40'
+]);
+const COLOR_RX = /(?:bg|text|border|from|to|ring|divide|placeholder|shadow)-(?:slate|gray|zinc|neutral|stone|sky|indigo|purple|pink|cyan|emerald|amber|red|orange|rose|teal|violet|fuchsia|blue|lime|green|yellow)-[0-9]{2,3}(?:\/[0-9]{1,3})?/g;
+const escapeSlash = (c) => c.replace(/\//g, '\\/');
+const seenColor = new Set();
+for (const f of [viewsrc, src, usrc]) for (const m of (f.match(COLOR_RX) || [])) seenColor.add(m);
+const uncovered = [...seenColor].filter((c) => !ACCENT_ALLOWLIST.has(c) && !light.includes(escapeSlash(c)));
+check('setiap utility warna punya padanan light (' + seenColor.size + ' ditemukan, ' + uncovered.length + ' belum)', uncovered.length === 0, true);
+if (uncovered.length) console.log('   utility tanpa padanan light: ' + uncovered.join(', '));
+check('formatter nopol ada', src.includes('PLATE_TOKEN_RE') && src.includes('function formatPlateInput') && src.includes('function formatPlateText'), true);
+check('formatter jalan saat ketik (vkb + keyboard)', /const type = \(ch\) => \{[\s\S]{0,300}formatPlateInput\(i\)/.test(src) && src.includes("inputMsgEl.addEventListener('input'"), true);
+check('normalisasi ulang saat kirim', src.includes('formatPlateText(rawText)') && src.indexOf('formatPlateText(rawText)') < src.indexOf('checkMasterNote(text)'), true);
+check('tts baca nopol tanpa spasi', tts.includes('\\b([A-Z]{1,2})\\s*(\\d{1,4})\\s*([A-Z]{1,3})\\b') && !tts.includes('\\b([A-Z]{1,2})\\s+(\\d{1,4})\\s+([A-Z]{1,3})\\b'), true);
+check('driverMissing di backend', msvc.includes('DriverMissing: !matched && !nameProvided'), true);
+check('driverMissing expose ke api', mc.includes('driverMissing = r.DriverMissing'), true);
+check('token nama bukan seluruh kalimat', msvc.includes('private static List<string> DriverTokens') && !msvc.includes('EF.Functions.Like(d, "%"'), true);
+check('buang stopword + token mirip nopol', msvc.includes('DriverStopWords') && msvc.includes('plate.Contains(t, StringComparison.Ordinal)'), true);
+check('nopol saja diterima (nama opsional)', src.includes('j.pairMatched || j.driverMissing') && src.includes('JANGAN verifikasi dulu. Minta konfirmasi sopir dengan pola kaku'), true);
+check('save tanpa penjaga nama', !src.includes('guardDriverNameOk') && src.includes('async function saveWoAuto()'), true);
+check('knownDriverName direset di semua titik', (src.match(/knownDriverName = '';/g) || []).length >= 5, true);
+check('kode free encoding utuh (bukan mojibake)', !/[â€Â]/.test(src), true);
+check('kursor teks digeser', src.includes("moveCaret") && src.includes('setRangeText') && src.includes('fa-caret-left'), true);
+check('bubble live ketikan', src.includes('function syncTypingBubble()') && src.includes('function clearTypingBubble()') && src.includes('typing-bubble'), true);
+check('chat menyingkir saat vkb', /\.vkb-open #chatBox\{padding-bottom:340px\}/.test(acss), true);
+check('marker cek master di-strip', /HASIL CEK MASTER\[\^\]\*\]\|\\\[HASIL CEK MASTER/.test(src) || src.includes('|\\[HASIL CEK MASTER[^\\]]*\\]'), true);
+check('vkb tak pakai scrollIntoView', !src.includes("p.scrollIntoView"), true);
+check('mismatch ikut naikkan failcount', src.includes('masterFailCount++;') && src.includes('TIDAK COCOK PERSIS'), true);
+check('backend vonis matchExact', msvc.includes('MatchExact: NormalizeNopol(display)') && msvc.includes('NopolHeard: norm'), true);
+check('backend exposed ke api', mc.includes('matchExact = r.MatchExact') && mc.includes('nopolHeard = r.NopolHeard'), true);
+check('save tolak nopol tak exact', be.includes('tak cocok persis dengan unit di bank data'), true);
+check('save exempt qr', be.includes('!qrWins && !master.MatchExact'), true);
+check('prefix per kategori (bukan WO)', be.includes('sp_get_new_running_no({0})", prefix') && !be.includes('sp_get_new_running_no({0})", "WO"'), true);
+check('resolver prefix ada', be.includes('ResolvePrefix') && be.includes('MaxPrefixLength'), true);
+check('normalisasi kategori ada', be.includes('NormalizeCategory') && be.includes('CategoryAliases'), true);
+check('1 WO per kategori', be.includes('foreach (var kv in keluhanMap)') && be.includes('WoNumbers'), true);
+check('cek duplikat sebelum loop', be.indexOf('Cek duplikat SRD') < be.indexOf('foreach (var kv in keluhanMap)'), true);
+check('presaranpm spasi', be.includes('string.IsNullOrWhiteSpace(qr) ? " " : Trunc(qr, 101)'), true);
+check('form isi WO per kategori', src.includes('woNumberSummary') && src.includes('fillWoNumbers(w.woNumber || w.WoNumber, wn)'), true);
+const woapp = readFileSync('./src/InteractiveAI.Backend/appsettings.json', 'utf8');
+const woopt = readFileSync('./src/InteractiveAI.Backend/Config/WoOptions.cs', 'utf8');
+check('mapping prefix di config', woapp.includes('"WOT"') && woapp.includes('"WOR"') && woapp.includes('"WOB"') && woapp.includes('"WOS"') && woapp.includes('"WOX"') && woapp.includes('"WOC"') && woapp.includes('"WOG"'), true);
+check('alias body/trailer ke Truk', woopt.includes('["body"] = "Truk"') && woopt.includes('["trailer"] = "Truk"'), true);
+check('alias AC ke Reefer', woopt.includes('["ac"] = "Reefer"') && woopt.includes('["air conditioner"] = "Reefer"'), true);
+check('alias AC sinkron di config', woapp.includes('"ac": "Reefer"') && woapp.includes('"air conditioner": "Reefer"'), true);
+check('prompt ekstraksi definisi AC', be.includes('Aturan kategori:') && be.includes('TERMASUK keluhan AC'), true);
+check('persona AC masuk Reefer', src.includes('keluhan AC (tidak dingin, freon) masuk Reefer'), true);
+check('placeholder form AC', viewsrc.includes('Keluhan reefer/AC') && viewsrc.includes('cabin (non-AC)'), true);
+const ent2 = readFileSync('./src/InteractiveAI.Backend/Models/DB/WorkOrder.cs', 'utf8');
+check('entitas bawa WoNumbers', ent2.includes('WoNumbers') && ent2.includes('WoCount'), true);
+check('sesi scroll vertikal', /ai-sessions\{[^}]*min-height:0/.test(scss) && /ai-sessions\{[^}]*overflow-y:auto/.test(scss), true);
+check('scrollbar sesi bergaya tema', acss.includes('.ai-sessions::-webkit-scrollbar') && acss.includes('scrollbar-color'), true);
+check('modal konfirmasi WO ada', viewsrc.includes('id="woDone"') && viewsrc.includes('btnWoDoneNext') && viewsrc.includes('woDoneCountdown'), true);
+check('woDone auto-return 60 detik', src.includes('const WO_DONE_SECONDS = 60') && src.includes('Kembali otomatis dalam'), true);
+check('countdown format mm:ss', src.includes("Math.floor(left / 60)") && src.includes("padStart(2, '0')"), true);
+check('tombol Selesai', viewsrc.includes('id="btnWoDoneNext"') && /btnWoDoneNext[^>]*>Selesai</.test(viewsrc), true);
+check('woDone tombol繼續', src.includes('woDoneNextBtn.onclick') && src.includes('backToStartRef = backToStart'), true);
+check('loadSessions pindah ke backToStart', /closeWoDone\(\);\s*loadSessions\(\);/.test(src), true);
+check('waitForQuiet dibatasi 12 detik', src.includes('waited > 12000') && !src.includes('waited > 30000'), true);
+check('tutup jeda 1500ms', src.includes('showWoDone(w, mySeq), 1500'), true);
+check('progress tutup percakapan', src.includes("setStatus('Menutup percakapan...')"), true);
+check('escaping html di woDone', src.includes('wo-row') && src.includes('<span class="wo-k">${escapeHtml(k)}</span>') && src.includes('<span class="wo-v">${escapeHtml(wn[k] || \'\')}</span>'), true);
+check('progress bar ada', viewsrc.includes('woProgressBar') && viewsrc.includes('woDoneSave') && viewsrc.includes('woDoneView') && acss.includes('@keyframes woSlide'), true);
+check('progress tak persentasi palsu', src.includes("showWoSaving('Menyimpan ke sistem...')") && src.includes('sec + \' dtk\''), true);
+check('safety simpan 90 detik', src.includes('WO_SAVE_MAX_MS = 90000') && src.includes('woSaveWatchdog'), true);
+check('progress ditutup di semua cabang', (src.match(/closeWoSaving\(\);/g) || []).length >= 5, true);
+check('textbox WO Nama/Jenis dihapus', !viewsrc.includes('fWo_Nama') && !viewsrc.includes('fWo_Jenis'), true);
+check('info span penuh', /\.loket-frow input\.fInfo\{grid-column:2\/-1\}/.test(acss), true);
+check('modal lebih besar', /ai-modal-box\{[^}]*max-width:560px/.test(scss), true);
+check('chatbox bounded + scroll', /\.loket-chatbox\{[^}]*overflow-y:auto/.test(acss) && /\.loket-chatbox\{[^}]*max-height:clamp\(/.test(acss), true);
+
+const fmtStart = src.indexOf('const PLATE_TOKEN_RE');
+const fmtEnd = src.indexOf('function followChatBottom');
+if (fmtStart < 0 || fmtEnd < 0) throw new Error('Blok formatter nopol tidak ditemukan di chat.js');
+const sandbox2 = { syncTypingBubble: () => { } };
+vm.createContext(sandbox2);
+vm.runInContext(src.slice(fmtStart, fmtEnd)
+    + '\nthis.formatPlateInput = formatPlateInput; this.formatPlateText = formatPlateText; this.extractStrictPlate = extractStrictPlate;', sandbox2);
+const { formatPlateInput, formatPlateText, extractStrictPlate } = sandbox2;
+const typeAll = (chars) => {
+    const i = { value: '', selectionStart: 0, selectionEnd: 0, setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b; } };
+    for (const ch of chars) {
+        i.value = i.value.slice(0, i.selectionStart) + ch + i.value.slice(i.selectionEnd);
+        i.selectionStart = i.selectionEnd = i.value.length;
+        formatPlateInput(i);
+    }
+    return i.value;
+};
+check('ketik nopol tanpa spasi jadi berspasi', typeAll('B9002UXU'), 'B 9002 UXU');
+check('ketik nopol 1 digit', typeAll('B1UX'), 'B 1 UX');
+check('ketik nopol 2 huruf depan', typeAll('AB1234CD'), 'AB 1234 CD');
+check('ketik tanpa huruf depan', typeAll('9002UXU'), '9002 UXU');
+check('tanpa spasi menggantung setelah digit', typeAll('B9002').includes('  '), false);
+check('formatPlateText tanpa perubahan', formatPlateText('B 9002 UXU'), 'B 9002 UXU');
+check('formatPlateText kosong', formatPlateText(''), '');
+check('WO number tak disentuh formatter', formatPlateText('WO-2609-00012'), 'WO-2609-00012');
+check('kalimat biasa tak rusak', formatPlateText('remiu200'), 'remiu200');
+check('huruf besar tak diubah (case mengikuti ketikan)', formatPlateText('b9002uxu'), 'b 9002 uxu');
+check('ejaan spasi dirangkaikan', formatPlateText('B 9002 U X U'), 'B 9002 UXU');
+check('ejaan penuh dirangkaikan', formatPlateText('B 9 0 0 2 U X U'), 'B 9002 UXU');
+check('ketik ejaan spasi jadi grup', typeAll('B 9002 U X U'), 'B 9002 UXU');
+check('ekstrak ejaan spasi', extractStrictPlate('B 9002 U X U').display, 'B 9002 UXU');
+check('ekstrak ejaan penuh', extractStrictPlate('B 9 0 0 2 U X U').display, 'B 9002 UXU');
+check('ekstrak nopol di kalimat nama', extractStrictPlate('Nama Bambang Suseno untuk nopol B 9002 U X U').display, 'B 9002 UXU');
+check('kalimat oli bukan nopol', extractStrictPlate('oli 2 tetes'), null);
+check('jam bukan nopol', extractStrictPlate('sampai jam 10 30'), null);
+check('kalimat jam tak rusak', formatPlateText('sampai jam 10 30'), 'sampai jam 10 30');
+
+const hStart = src.indexOf('function isSttHallucination');
+const hEnd = src.indexOf('function rememberSttDebug');
+if (hStart < 0 || hEnd < 0) throw new Error('Blok filter halusinasi tidak ditemukan di chat.js');
+const sandbox3 = {};
+vm.createContext(sandbox3);
+vm.runInContext(src.slice(hStart, hEnd) + '\nthis.isSttHallucination = isSttHallucination;', sandbox3);
+const { isSttHallucination } = sandbox3;
+check('halusinasi kurung dibuang', isSttHallucination('[SELESA]'), true);
+check('halusinasi musik dibuang', isSttHallucination('[Musik]'), true);
+check('teks kosong dibuang', isSttHallucination('   '), true);
+check('satu huruf dibuang', isSttHallucination('a'), true);
+check('nopol lolos', isSttHallucination('B 9002 UXU'), false);
+check('jawaban pendek lolos', isSttHallucination('ya'), false);
+check('kalimat biasa lolos', isSttHallucination('belum buat SR'), false);
+
+console.log(`\n${pass} pass, ${fail} fail`);
+process.exit(fail ? 1 : 0);

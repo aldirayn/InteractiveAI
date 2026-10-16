@@ -1,0 +1,54 @@
+@{
+    ViewData["Title"] = "Face Detection";
+}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card card-primary card-outline">
+            <div class="card-header">
+                <b>Webcam</b>
+                <span class="text-muted text-sm ml-2" id="visionStatus">Klik "Nyalakan kamera".</span>
+            </div>
+            <div class="card-body p-1" style="position:relative">
+                <video id="cam" class="w-100" style="background:#000;border-radius:.25rem" playsinline muted></video>
+                <canvas id="overlay" style="position:absolute;top:4px;left:4px;pointer-events:none"></canvas>
+            </div>
+            <div class="card-footer">
+                <button id="btnCam" class="btn btn-primary btn-sm"><i class="fas fa-video"></i> Nyalakan kamera</button>
+                <button id="btnSnap" class="btn btn-success btn-sm" disabled><i class="fas fa-camera"></i> Deteksi frame ini</button>
+                <span class="text-muted text-sm ml-2" id="inferInfo"></span>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card card-secondary card-outline">
+            <div class="card-header"><b>Upload gambar</b></div>
+            <div class="card-body">
+                <div class="form-group">
+                    <input type="file" id="fileInput" class="form-control-file" accept="image/*" />
+                </div>
+                <button id="btnUpload" class="btn btn-success btn-sm btn-block"><i class="fas fa-upload"></i> Deteksi gambar</button>
+                <hr />
+                <img id="preview" class="img-fluid" style="border-radius:.25rem" />
+                <canvas id="previewOverlay" class="img-fluid" style="border-radius:.25rem;display:none"></canvas>
+            </div>
+            <div class="card-footer text-sm text-muted" id="modelInfo">Model: memuat...</div>
+        </div>
+        <div class="card card-success card-outline">
+            <div class="card-header"><b><i class="fas fa-robot"></i> Mode Pemandu AI</b></div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label class="text-sm">Persona / instruksi pemandu</label>
+                    <textarea id="personaInput" class="form-control form-control-sm" rows="3">Kamu adalah Mira, petugas loket WO bengkel truk yang ramah, hangat, dan supel seperti ngobrol dengan teman. Layani sopir dengan santai tapi tetap gali info yang dibutuhkan: nama, nopol atau nomor unit truk, keluhan perbaikannya, lalu minta QR KIMO ditunjukkan ke kamera dan rangkum dengan natural sebelum konfirmasi. Bicara 1-2 kalimat pendek per giliran, satu pertanyaan dalam satu waktu, tanggapi jawaban sopir dengan hangat sebelum lanjut bertanya. Bahasa Indonesia lisan sehari-hari, tanpa markdown, tanpa bullet, tanpa kode, tanpa emoji.</textarea>
+                </div>
+                <button id="btnGuide" class="btn btn-success btn-sm btn-block" disabled><i class="fas fa-play"></i> Aktifkan pemandu</button>
+                <small class="text-muted">Butuh kamera nyala + Chrome. AI menyapa otomatis saat orang terdeteksi, lalu ngobrol via suara.</small>
+                <hr />
+                <div id="guideLog" style="height:30vh;overflow-y:auto;background:#f4f6f9;border-radius:.5rem;padding:.75rem;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="~/js/vision.js"></script>
+}

@@ -1,0 +1,24 @@
+﻿<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>@ViewData["Title"] - InteractiveAI</title>
+    <script>try{if(localStorage.getItem('loketTheme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
+    <link rel="stylesheet" href="~/lib/fontawesome/css/all.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/lib/fonts/inter.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/loket-aura.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/loket-light.css" asp-append-version="true" />
+</head>
+<body class="ai-body">
+<div class="ai-bg" aria-hidden="true"><span class="ai-bg-glow g1"></span><span class="ai-bg-glow g2"></span></div>
+<div class="ai-phone@(ViewData["LoketWide"] as bool? == true ? " ai-phone-wide" : "")">
+    <main class="ai-main">
+        @RenderBody()
+    </main>
+</div>
+<script src="~/lib/jquery/jquery.min.js" asp-append-version="true"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

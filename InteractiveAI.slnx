@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/InteractiveAI.Backend/InteractiveAI.Backend.csproj" />
+    <Project Path="src/InteractiveAI.Frontend/InteractiveAI.Frontend.csproj" />
+  </Folder>
+</Solution>

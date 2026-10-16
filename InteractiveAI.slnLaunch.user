@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "New Profile",
+    "Projects": [
+      {
+        "Path": "src\\InteractiveAI.Backend\\InteractiveAI.Backend.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "src\\InteractiveAI.Frontend\\InteractiveAI.Frontend.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]
