@@ -1439,6 +1439,7 @@ function startKeluhanWatch() {
     };
     keluhanWatchTimer = setTimeout(tick, KELUHAN_NORESP_MS);
 }
+
 function closeKeluhanWatch() {
     stopKeluhanWatch();
     if (!sessionId) { resetToGate(); return; }

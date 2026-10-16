@@ -119,6 +119,7 @@ public class WoService : IWoService
             .OrderBy(m => m.Id)
             .Where(m => m.Role is "user" or "assistant")
             .Select(m => $"{m.Role}: {m.Content}");
+
         var qr = session.Messages
             .Where(m => (m.Role is "user" or "assistant") && m.Content.Contains("[QR KIMO:"))
             .Select(m => NormSrd(ExtractQr(m.Content)))
@@ -143,6 +144,7 @@ public class WoService : IWoService
         var canonical = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var kv in formRows)
             AppendKeluhan(canonical, NormalizeCategory(kv.Key), kv.Value);
+
         foreach (var seg in SplitComplaintSegments(complaint))
             AppendKeluhan(canonical, NormalizeCategory(seg.Key), seg.Value);
 
@@ -158,6 +160,7 @@ public class WoService : IWoService
         foreach (var c in foundInText)
             if (!wanted.Exists(x => x.Equals(c, StringComparison.OrdinalIgnoreCase)))
                 wanted.Add(c);
+
         if (foundInText.Count > 0)
             _log.LogDebug("WO sesi {SessionId} kategori terdeteksi dari isi: {Found} gabungan: {Cats}",
                 sessionId, string.Join(",", foundInText), string.Join(",", wanted));
@@ -166,6 +169,7 @@ public class WoService : IWoService
         var segCount = rawSegs.Count;
         _log.LogDebug("WO sesi {SessionId} segmen mentah {Count}: {Segs} kategori LLM: {Cats}",
             sessionId, segCount, string.Join(" | ", rawSegs), string.Join(",", wanted));
+
         if (keluhanMap.Count == 1 && (wanted.Count >= 2 || segCount >= 2))
         {
             var soloKey = "";
@@ -380,49 +384,48 @@ public class WoService : IWoService
 
                 _mka.TrWoHdrProcess.Add(hdr);
 
+                await _mka.TrWoHdrLog.AddAsync(new TrWoHdrLog
+                {
+                    WoNo = srNo,
+                    ActionStatus = "WAITING",
+                    ActionUser = "Mira AI",
+                    ActionDate = DateTime.Now,
+                    Noted = BuildCreatedLogNote(srNo, null)
+                });
+
+                await _mka.AddAsync(new TrWoJobProcess
+                {
+                    PreSrcNo = srNo,
+                    PreJobId = string.Empty,
+                    PreJobDesc = string.Empty,
+                    TmsDurationJam = "00",
+                    TmsDurationMenit = "00",
+                    PreJobRemarks = string.Empty,
+                    Lnitmseq = 1,
+                    TmsGolongan = string.Empty,
+                    TmsGroup = 6,
+                    Crusrid = "Mira AI",
+                    Creatddt = System.DateTime.Now.Date,
+                    Createtime = new DateTime(
+                                       1900,
+                                       1,
+                                       1,
+                                       System.DateTime.Now.Hour,
+                                       System.DateTime.Now.Minute,
+                                       System.DateTime.Now.Second),
+                    Mdfusrid = string.Empty,
+                    Modifdt = new DateTime(1900, 1, 1),
+                    Modiftime = new DateTime(1900, 1, 1),
+                    RedoJob = 0,
+                    PreSubJobId = string.Empty,
+                    PreSubJobDesc = string.Empty,
+                    SubJobDurationJam = "00",
+                    SubJobDurationMenit = "00",
+                    DexRowId = 0
+                });
+
                 rows.Add(new DictionaryEntry(cat, srNo));
             }
-
-
-            await _mka.TrWoHdrLog.AddAsync(new TrWoHdrLog
-            {
-                WoNo = srNo,
-                ActionStatus = "WAITING",
-                ActionUser = "Mira AI",
-                ActionDate = DateTime.Now,
-                Noted = BuildCreatedLogNote(srNo, null)
-            });
-
-            await _mka.AddAsync(new TrWoJobProcess
-            {
-                PreSrcNo = srNo,
-                PreJobId = string.Empty,
-                PreJobDesc = string.Empty,
-                TmsDurationJam = "00",
-                TmsDurationMenit = "00",
-                PreJobRemarks = string.Empty,
-                Lnitmseq = 1,
-                TmsGolongan = string.Empty,
-                TmsGroup = 6,
-                Crusrid = "Mira AI",
-                Creatddt = System.DateTime.Now.Date,
-                Createtime = new DateTime(
-                                        1900,
-                                        1,
-                                        1,
-                                        System.DateTime.Now.Hour,
-                                        System.DateTime.Now.Minute,
-                                        System.DateTime.Now.Second),
-                Mdfusrid = string.Empty,
-                Modifdt = new DateTime(1900, 1, 1),
-                Modiftime = new DateTime(1900, 1, 1),
-                RedoJob =  0,
-                PreSubJobId = string.Empty,
-                PreSubJobDesc = string.Empty,
-                SubJobDurationJam = "00",
-                SubJobDurationMenit = "00",
-                DexRowId = 0
-            });
 
             await _mka.SaveChangesAsync(ct);
             await trx.CommitAsync(ct);
