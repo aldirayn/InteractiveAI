@@ -6,6 +6,11 @@
     .\publish.ps1
     .\publish.ps1 -SkipFrontend
     .\publish.ps1 -Runtime win-x64 -SelfContained -Zip
+    .\publish.ps1 -NoModels          # tanpa folder model AI (lebih kecil, mis. hanya update kode)
+
+    Model AI (tidak ada di git) ikut disalin ke hasil publish backend:
+      <repo>\model\*                   -> backend\model\
+      src\...Backend\Models\ (non .cs)  -> backend\Models\ (+ yolo11n-coco.onnx dari model\ bila belum ada)
 #>
 [CmdletBinding()]
 param(
@@ -19,7 +24,8 @@ param(
     [switch]$SkipBackend,
     [switch]$SkipFrontend,
     [switch]$Zip,
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$NoModels     # jangan salin folder model AI
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,6 +82,37 @@ if (-not $SkipBackend) {
     $out = Join-Path $OutputDir "backend"
     Publish-Project $BackendProject $out
     Write-Ok "Backend -> $out"
+
+    if (-not $NoModels) {
+        Write-Step "Salin model AI"
+        # 1) <repo>\model -> backend\model  (Voice/STT: appsettings.json "model/...")
+        $modelSrc = Join-Path $Root "model"
+        if (Test-Path $modelSrc) {
+            $modelOut = Join-Path $out "model"
+            New-Item -ItemType Directory -Force -Path $modelOut | Out-Null
+            Copy-Item -Path (Join-Path $modelSrc "*") -Destination $modelOut -Recurse -Force
+            $mb = [math]::Round(((Get-ChildItem $modelOut -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
+            Write-Ok "model\  -> $modelOut ($mb MB)"
+        } else {
+            Write-Warning "Folder $modelSrc tidak ada - model AI tidak ikut (taruh manual di server)."
+        }
+
+        # 2) src\...Backend\Models (file non-kode) -> backend\Models  (Vision: "Models/yolo11n-coco.onnx")
+        $modelsOut = Join-Path $out "Models"
+        New-Item -ItemType Directory -Force -Path $modelsOut | Out-Null
+        $modelsSrc = Join-Path (Split-Path $BackendProject -Parent) "Models"
+        if (Test-Path $modelsSrc) {
+            Get-ChildItem $modelsSrc -File | Where-Object { $_.Extension -ne ".cs" } |
+                Copy-Item -Destination $modelsOut -Force
+        }
+        foreach ($f in @("yolo11n-coco.onnx")) {
+            $dst = Join-Path $modelsOut $f
+            $alt = Join-Path $modelSrc $f
+            if (-not (Test-Path $dst) -and (Test-Path $alt)) { Copy-Item $alt $dst -Force }
+            if (-not (Test-Path $dst)) { Write-Warning "Models\$f tidak ditemukan - kamera/deteksi orang tidak aktif." }
+        }
+        Write-Ok "Models\ -> $modelsOut ($((Get-ChildItem $modelsOut -File).Name -join ', '))"
+    }
 }
 
 if (-not $SkipFrontend) {

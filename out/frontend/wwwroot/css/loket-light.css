@@ -1,0 +1,335 @@
+/* Light mode - hanya aktif saat <html data-theme="light">
+   Dark mode tetap di loket-aura.css + site.css (tidak diubah sama sekali).
+   Semua aturan di bawah memakai awalan [data-theme="light"] supaya specificity
+   (0,2,0) menang atas utility Tailwind (0,1,0) yang disuntikkan runtime oleh
+   tailwindcss.js - termasuk saat stylesheet ini dimuat lebih dulu. */
+
+[data-theme="light"] {
+    --bg: #f4f2fb;
+    --bg2: #ffffff;
+    --card: rgba(30, 27, 46, .05);
+    --card2: rgba(30, 27, 46, .08);
+    --line: rgba(30, 27, 46, .14);
+    --txt: #221e35;
+    --mut: #5c5573;
+    --ok: #059669;
+    --warn: #b45309;
+    --bad: #dc2626;
+}
+
+[data-theme="light"] body.ai-body {
+    background: var(--bg);
+    color: var(--txt);
+}
+
+[data-theme="light"] .ai-bg-glow {
+    opacity: .16;
+}
+
+[data-theme="light"] .ai-phone {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .9), rgba(248, 247, 253, .95));
+    border-color: var(--line);
+}
+
+[data-theme="light"] .ai-phone-wide {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .9), rgba(246, 245, 252, .96));
+}
+
+/* - site.css - */
+[data-theme="light"] .ai-topbar {
+    background: rgba(255, 255, 255, .88);
+}
+
+[data-theme="light"] .ai-drawer {
+    background: #ffffff;
+    box-shadow: 0 24px 60px rgba(30, 27, 46, .18);
+}
+
+[data-theme="light"] .ai-iconbtn {
+    background: #ffffff;
+    border-color: var(--line);
+    color: var(--txt);
+}
+
+[data-theme="light"] .ai-iconbtn.active {
+    color: #fff;
+}
+
+[data-theme="light"] .ai-modal {
+    background: rgba(30, 27, 46, .45);
+}
+
+[data-theme="light"] .ai-modal-box {
+    background: #ffffff;
+    border-color: var(--line);
+    box-shadow: 0 24px 60px rgba(30, 27, 46, .2);
+}
+
+[data-theme="light"] .ai-modal-note {
+    color: var(--mut);
+}
+
+[data-theme="light"] .ai-check {
+    background: var(--card);
+    border-color: var(--line);
+    color: var(--txt);
+}
+
+[data-theme="light"] .ai-btn-primary,
+[data-theme="light"] .ai-btn-glow {
+    color: #fff;
+}
+
+[data-theme="light"] .ai-orb {
+    box-shadow: 0 0 50px rgba(168, 85, 247, .28);
+}
+
+[data-theme="light"] .ai-orb.speaking {
+    box-shadow: 0 0 80px rgba(168, 85, 247, .45);
+}
+
+[data-theme="light"] .ai-orb.live {
+    box-shadow: 0 0 85px rgba(168, 85, 247, .45);
+}
+
+[data-theme="light"] .ai-orb.listening {
+    box-shadow: 0 0 70px rgba(248, 113, 113, .4);
+}
+
+/* - loket-aura.css: permukaan - */
+[data-theme="light"] .glass-panel {
+    background: rgba(255, 255, 255, .92);
+    border-color: rgba(30, 27, 46, .12);
+}
+
+[data-theme="light"] .glass-button {
+    background: rgba(30, 27, 46, .04);
+    border-color: rgba(30, 27, 46, .12);
+    color: #2c2740;
+}
+
+[data-theme="light"] .glass-button:hover {
+    background: rgba(168, 85, 247, .12);
+    border-color: rgba(168, 85, 247, .45);
+}
+
+/* - scrollbar - */
+[data-theme="light"] .loket-scroll::-webkit-scrollbar-track,
+[data-theme="light"] .ai-sessions::-webkit-scrollbar-track {
+    background: rgba(30, 27, 46, .06);
+}
+
+[data-theme="light"] .loket-scroll::-webkit-scrollbar-thumb,
+[data-theme="light"] .ai-sessions::-webkit-scrollbar-thumb {
+    background: rgba(124, 58, 237, .35);
+}
+
+[data-theme="light"] .loket-scroll::-webkit-scrollbar-thumb:hover,
+[data-theme="light"] .ai-sessions::-webkit-scrollbar-thumb:hover {
+    background: rgba(124, 58, 237, .6);
+}
+
+[data-theme="light"] .ai-sessions {
+    scrollbar-color: rgba(124, 58, 237, .35) rgba(30, 27, 46, .06);
+}
+
+/* - form keluhan - */
+[data-theme="light"] .loket-form>.loket-frow:first-of-type {
+    border-top-color: rgba(30, 27, 46, .18);
+}
+
+[data-theme="light"] .loket-frow label {
+    color: #3a3450;
+}
+
+[data-theme="light"] .loket-frow input {
+    color: #221e35;
+    background: #ffffff;
+    border-color: rgba(30, 27, 46, .18);
+}
+
+[data-theme="light"] .loket-frow input:focus {
+    background: #ffffff;
+    border-color: #a855f7;
+}
+
+[data-theme="light"] .loket-frow input[readonly] {
+    color: var(--mut);
+    background: rgba(30, 27, 46, .04);
+}
+
+[data-theme="light"] .loket-frow input.fWo {
+    color: #6d28d9;
+    border-color: rgba(168, 85, 247, .5);
+    background: rgba(168, 85, 247, .1);
+}
+
+[data-theme="light"] .loket-frow input.fWo::placeholder {
+    color: rgba(109, 40, 217, .45);
+}
+
+/* - panel kanan - */
+[data-theme="light"] .loket-ava {
+    background: #ede9fe;
+    border-color: rgba(168, 85, 247, .6);
+}
+
+[data-theme="light"] .loket-ava-name {
+    color: #221e35;
+}
+
+[data-theme="light"] .loket-ava-sub {
+    color: var(--mut);
+}
+
+[data-theme="light"] .loket-cam video {
+    border-color: rgba(30, 27, 46, .2);
+}
+
+[data-theme="light"] .loket-qr-label {
+    color: var(--mut);
+}
+
+[data-theme="light"] .loket-qr-value {
+    color: #0e7490;
+}
+
+/* - riwayat percakapan - */
+[data-theme="light"] .loket-chat-head {
+    background: linear-gradient(135deg, rgba(237, 233, 254, .95), rgba(224, 231, 255, .9));
+    border-bottom-color: rgba(30, 27, 46, .12);
+}
+
+[data-theme="light"] .loket-chat-title {
+    color: #2c2740;
+}
+
+[data-theme="light"] .loket-chat-preview {
+    color: var(--mut);
+}
+
+[data-theme="light"] .loket-chat-badge {
+    background: #ddd6fe;
+    border-color: rgba(124, 58, 237, .5);
+    color: #4c1d95;
+}
+
+[data-theme="light"] .badge {
+    background: rgba(30, 27, 46, .06);
+    border-color: rgba(30, 27, 46, .14);
+}
+
+[data-theme="light"] .badge-secondary {
+    background: rgba(30, 27, 46, .04);
+}
+
+[data-theme="light"] .badge-success {
+    background: rgba(5, 150, 105, .14);
+    border-color: rgba(5, 150, 105, .4);
+}
+
+[data-theme="light"] .badge-warning {
+    background: rgba(180, 83, 9, .14);
+    border-color: rgba(180, 83, 9, .4);
+}
+
+[data-theme="light"] .badge-danger {
+    background: rgba(220, 38, 38, .12);
+    border-color: rgba(220, 38, 38, .38);
+}
+
+/* - keyboard virtual - */
+[data-theme="light"] #vkb {
+    background: rgba(255, 255, 255, .97);
+    border-color: rgba(124, 58, 237, .4);
+    box-shadow: 0 24px 60px rgba(30, 27, 46, .22);
+}
+
+[data-theme="light"] #vkb .text-slate-400 {
+    color: #5c5573;
+}
+
+[data-theme="light"] #vkb .text-slate-600 {
+    color: #8b85a1;
+}
+
+[data-theme="light"] #vkbKeys button {
+    color: #2c2740;
+}
+
+/* - modal WO & daftar - */
+[data-theme="light"] .wo-progress {
+    background: rgba(30, 27, 46, .08);
+    border-color: rgba(30, 27, 46, .18);
+}
+
+[data-theme="light"] .wo-wolist .wo-row {
+    background: rgba(168, 85, 247, .1);
+    border-color: rgba(124, 58, 237, .35);
+}
+
+[data-theme="light"] .wo-wolist .wo-k {
+    color: #4b4560;
+}
+
+[data-theme="light"] .wo-wolist .wo-v {
+    color: #0e7490;
+}
+
+[data-theme="light"] .wo-wolist .wo-meta {
+    color: var(--mut);
+}
+
+[data-theme="light"] .ai-qpill {
+    background: #ffffff;
+    border-color: var(--line);
+    color: #3a3450;
+}
+
+/* - header nopol (aksen tetap) - */
+[data-theme="light"] .loket-nopol-label {
+    color: rgba(255, 255, 255, .92);
+}
+
+[data-theme="light"] .loket-nopol-value {
+    background: rgba(255, 255, 255, .2);
+}
+
+/* - utility Tailwind yang dipakai di markup & template JS - */
+[data-theme="light"] .text-slate-100 { color: #221e35; }
+[data-theme="light"] .text-slate-200 { color: #2c2740; }
+[data-theme="light"] .text-slate-300 { color: #3a3450; }
+[data-theme="light"] .text-slate-400 { color: #5c5573; }
+[data-theme="light"] .text-slate-500 { color: #6b6482; }
+[data-theme="light"] .text-slate-600 { color: #8b85a1; }
+[data-theme="light"] .placeholder-slate-500::placeholder { color: #8b85a1; }
+
+[data-theme="light"] .bg-slate-900\/80 { background-color: rgba(255, 255, 255, .95); }
+[data-theme="light"] .bg-slate-900\/90 { background-color: #ffffff; }
+[data-theme="light"] .bg-slate-900\/30 { background-color: rgba(30, 27, 46, .05); }
+[data-theme="light"] .bg-slate-950\/80 { background-color: rgba(255, 255, 255, .96); }
+[data-theme="light"] .bg-slate-950 { background-color: #ffffff; }
+[data-theme="light"] .bg-cyan-950\/40 { background-color: rgba(8, 145, 178, .14); }
+
+[data-theme="light"] .border-slate-800 { border-color: rgba(30, 27, 46, .18); }
+[data-theme="light"] .border-slate-800\/80 { border-color: rgba(30, 27, 46, .16); }
+[data-theme="light"] .border-slate-700\/80 { border-color: rgba(30, 27, 46, .2); }
+[data-theme="light"] .border-cyan-500\/20 { border-color: rgba(8, 145, 178, .35); }
+[data-theme="light"] .border-cyan-400\/40 { border-color: rgba(8, 145, 178, .45); }
+[data-theme="light"] .border-cyan-500\/30 { border-color: rgba(8, 145, 178, .45); }
+[data-theme="light"] .border-purple-400\/40 { border-color: rgba(124, 58, 237, .45); }
+[data-theme="light"] .border-purple-400\/50 { border-color: rgba(124, 58, 237, .5); }
+[data-theme="light"] .border-purple-500\/20 { border-color: rgba(124, 58, 237, .35); }
+[data-theme="light"] .border-purple-500\/30 { border-color: rgba(124, 58, 237, .4); }
+[data-theme="light"] .border-red-500\/50 { border-color: rgba(220, 38, 38, .45); }
+
+[data-theme="light"] .text-purple-300 { color: #6d28d9; }
+[data-theme="light"] .text-purple-400 { color: #7c3aed; }
+[data-theme="light"] .text-cyan-300 { color: #0e7490; }
+[data-theme="light"] .text-cyan-400 { color: #0891b2; }
+[data-theme="light"] .text-amber-400 { color: #b45309; }
+
+[data-theme="light"] .bg-purple-500\/20 { background-color: rgba(124, 58, 237, .14); }
+[data-theme="light"] .bg-purple-500\/5 { background-color: rgba(124, 58, 237, .07); }
+[data-theme="light"] .bg-red-500\/10 { background-color: rgba(220, 38, 38, .1); }
+[data-theme="light"] .bg-red-400 { background-color: #dc2626; }
