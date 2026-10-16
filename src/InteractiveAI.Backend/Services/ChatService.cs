@@ -26,18 +26,24 @@ public class ChatService : IChatService
     private readonly AppDbContext _db;
     private readonly IOllamaService _ollama;
     private readonly OllamaOptions _opt;
+    private readonly ILogger<ChatService> _log;
 
-    public ChatService(AppDbContext db, IOllamaService ollama, IOptions<OllamaOptions> opt)
+    public ChatService(AppDbContext db, IOllamaService ollama, IOptions<OllamaOptions> opt, ILogger<ChatService> log)
     {
         _db = db;
         _ollama = ollama;
         _opt = opt.Value;
+        _log = log;
     }
 
     public async Task<ChatResponse> SendAsync(ChatRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Message))
             throw new ArgumentException("Message tidak boleh kosong.");
+
+        _log.LogDebug("Chat masuk sesi {Session} modelMinta {ModelMinta} suhu {Temp} {Len} karakter systemPrompt {HasSys}: {Message}",
+            req.SessionId?.ToString() ?? "baru", req.Model ?? "", req.Temperature, req.Message.Length,
+            string.IsNullOrWhiteSpace(req.SystemPrompt) ? "tidak" : "ada", req.Message);
 
         var model = string.IsNullOrWhiteSpace(req.Model) ? _opt.DefaultModel : req.Model.Trim();
 
@@ -84,6 +90,8 @@ public class ChatService : IChatService
         }
         catch (HttpRequestException ex)
         {
+            _log.LogError(ex, "Ollama gagal sesi {SessionId} model {Model} suhu {Temp} riwayat {Count} pesan",
+                session.Id, model, req.Temperature, history.Count);
             throw new InvalidOperationException(
                 $"Gagal menghubungi Ollama di {_opt.BaseUrl}. Pastikan OLLAMA_API_KEY valid (buat di https://ollama.com/settings/keys) dan model `{model}` tersedia di akun Cloud kamu. Detail: {ex.Message}", ex);
         }
@@ -91,6 +99,11 @@ public class ChatService : IChatService
         _db.Messages.Add(new ChatMessage { SessionId = session.Id, Role = "user", Content = req.Message });
         _db.Messages.Add(new ChatMessage { SessionId = session.Id, Role = "assistant", Content = answer });
         await _db.SaveChangesAsync(ct);
+
+        _log.LogInformation("Chat sesi {SessionId} model {Model} user {UserLen} karakter assistant {AnswerLen} karakter",
+            session.Id, model, req.Message.Length, answer.Length);
+        _log.LogDebug("Chat sesi {SessionId} user: {UserMessage}", session.Id, req.Message);
+        _log.LogDebug("Chat sesi {SessionId} assistant: {Answer}", session.Id, answer);
 
         return new ChatResponse
         {
@@ -148,6 +161,9 @@ public class ChatService : IChatService
         _db.Messages.Add(new ChatMessage { SessionId = session.Id, Role = "user", Content = req.Message });
         await _db.SaveChangesAsync(ct);
 
+        _log.LogDebug("Stream mulai sesi {SessionId} model {Model} riwayat {Count} pesan user: {UserMessage}",
+            session.Id, model, history.Count, req.Message);
+
         return new ChatStreamStart(session.Id, model, history);
     }
 
@@ -164,6 +180,7 @@ public class ChatService : IChatService
         if (string.IsNullOrEmpty(text)) throw new ArgumentException("Respons kosong.");
         _db.Messages.Add(new ChatMessage { SessionId = sessionId, Role = "assistant", Content = text });
         await _db.SaveChangesAsync(ct);
+        _log.LogDebug("Stream selesai sesi {SessionId} {Len} karakter assistant: {Answer}", sessionId, text.Length, text);
         var session = await _db.Sessions.FindAsync(new object[] { sessionId }, ct);
         return new ChatResponse
         {
@@ -191,6 +208,9 @@ public class ChatService : IChatService
             _db.Messages.Add(new ChatMessage { SessionId = session.Id, Role = "system", Content = systemPrompt.Trim() });
         _db.Messages.Add(new ChatMessage { SessionId = session.Id, Role = "assistant", Content = greeting.Trim() });
         await _db.SaveChangesAsync(ct);
+
+        _log.LogInformation("Sapa sesi baru {SessionId} model {Model}", session.Id, model);
+        _log.LogDebug("Sapa sesi {SessionId} assistant: {Greeting}", session.Id, greeting.Trim());
 
         return new ChatResponse
         {
@@ -229,5 +249,6 @@ public class ChatService : IChatService
         if (s is null) throw new KeyNotFoundException("Session tidak ditemukan.");
         _db.Sessions.Remove(s);
         await _db.SaveChangesAsync(ct);
+        _log.LogInformation("Sesi {SessionId} dihapus", sessionId);
     }
 }

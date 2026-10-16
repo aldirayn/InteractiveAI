@@ -905,6 +905,92 @@ namespace InteractiveAI.Backend.Data
                 entity.Property(e => e.LocName).HasMaxLength(101).HasColumnName("loc_name");
             });
 
+            modelBuilder.Entity<TrWoJobProcess>(entity =>
+            {
+                entity.HasKey(e => new { e.PreSrcNo, e.PreJobId, e.Lnitmseq })
+                    .HasName("PRIMARY")
+                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0, 0 });
+
+                entity
+                    .ToTable("tr_wo_job_process");
+                //.HasCharSet("latin1")
+                //.UseCollation("latin1_swedish_ci");
+
+                entity.HasIndex(e => new { e.Creatddt, e.Createtime }, "idx_pre01133104_datetime");
+
+                entity.HasIndex(e => e.PreSrcNo, "idx_pre01133104_src_no");
+                entity.HasIndex(e => e.DexRowId, "idx_pre01133104_dex_row_id");
+
+                entity.Property(e => e.PreSrcNo)
+                    .HasMaxLength(15)
+                    .IsFixedLength()
+                    .HasColumnName("pre_src_no");
+                entity.Property(e => e.PreJobId)
+                    .HasMaxLength(15)
+                    .IsFixedLength()
+                    .HasColumnName("pre_job_id");
+                entity.Property(e => e.Lnitmseq).HasColumnName("lnitmseq");
+                entity.Property(e => e.Creatddt)
+                    .HasColumnType("datetime")
+                    .HasColumnName("creatddt");
+                entity.Property(e => e.Createtime)
+                    .HasColumnType("datetime")
+                    .HasColumnName("createtime");
+                entity.Property(e => e.Crusrid)
+                    .HasMaxLength(15)
+                    .IsFixedLength()
+                    .HasColumnName("crusrid");
+                entity.Property(e => e.DexRowId).HasColumnName("dex_row_id");
+                entity.Property(e => e.Mdfusrid)
+                    .HasMaxLength(15)
+                    .IsFixedLength()
+                    .HasColumnName("mdfusrid");
+                entity.Property(e => e.Modifdt)
+                    .HasColumnType("datetime")
+                    .HasColumnName("modifdt");
+                entity.Property(e => e.Modiftime)
+                    .HasColumnType("datetime")
+                    .HasColumnName("modiftime");
+                entity.Property(e => e.PreJobDesc)
+                    .HasMaxLength(101)
+                    .IsFixedLength()
+                    .HasColumnName("pre_job_desc");
+                entity.Property(e => e.PreJobRemarks)
+                    .HasMaxLength(101)
+                    .IsFixedLength()
+                    .HasColumnName("pre_job_remarks");
+                entity.Property(e => e.PreSubJobDesc)
+                    .HasMaxLength(101)
+                    .IsFixedLength()
+                    .HasColumnName("pre_sub_job_desc");
+                entity.Property(e => e.PreSubJobId)
+                    .HasMaxLength(15)
+                    .IsFixedLength()
+                    .HasColumnName("pre_sub_job_id");
+                entity.Property(e => e.RedoJob).HasColumnName("redo_job");
+                entity.Property(e => e.SubJobDurationJam)
+                    .HasMaxLength(5)
+                    .IsFixedLength()
+                    .HasColumnName("sub_job_duration_jam");
+                entity.Property(e => e.SubJobDurationMenit)
+                    .HasMaxLength(5)
+                    .IsFixedLength()
+                    .HasColumnName("sub_job_duration_menit");
+                entity.Property(e => e.TmsDurationJam)
+                    .HasMaxLength(5)
+                    .IsFixedLength()
+                    .HasColumnName("tms_duration_jam");
+                entity.Property(e => e.TmsDurationMenit)
+                    .HasMaxLength(5)
+                    .IsFixedLength()
+                    .HasColumnName("tms_duration_menit");
+                entity.Property(e => e.TmsGolongan)
+                    .HasMaxLength(21)
+                    .IsFixedLength()
+                    .HasColumnName("tms_golongan");
+                entity.Property(e => e.TmsGroup).HasColumnName("tms_group");
+            });
+
             OnModelCreatingPartial(modelBuilder);
         }
 

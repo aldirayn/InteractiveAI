@@ -9,7 +9,8 @@ namespace InteractiveAI.Backend.Controllers;
 public class WoController : ControllerBase
 {
     private readonly IWoService _wo;
-    public WoController(IWoService wo) => _wo = wo;
+    private readonly ILogger<WoController> _log;
+    public WoController(IWoService wo, ILogger<WoController> log) { _wo = wo; _log = log; }
 
     public record FromSessionRequest(Guid SessionId);
 
@@ -18,8 +19,16 @@ public class WoController : ControllerBase
     public async Task<IActionResult> FromSession([FromBody] FromSessionRequest req, CancellationToken ct)
     {
         try { return Ok(await _wo.CreateFromSessionAsync(req.SessionId, ct)); }
-        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
-        catch (InvalidOperationException ex) { return StatusCode(502, new { error = ex.Message }); }
+        catch (KeyNotFoundException ex)
+        {
+            _log.LogWarning(ex, "WO sesi {SessionId} gagal: sesi tidak ditemukan", req.SessionId);
+            return NotFound(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _log.LogWarning(ex, "WO sesi {SessionId} gagal: {Error}", req.SessionId, ex.Message);
+            return StatusCode(502, new { error = ex.Message });
+        }
     }
       
     [HttpGet]
@@ -38,6 +47,10 @@ public class WoController : ControllerBase
     public async Task<IActionResult> Get(long id, CancellationToken ct)
     {
         try { return Ok(await _wo.GetAsync(id, ct)); }
-        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+        catch (KeyNotFoundException ex)
+        {
+            _log.LogWarning(ex, "WO id {Id} tidak ditemukan", id);
+            return NotFound(new { error = ex.Message });
+        }
     }
 }

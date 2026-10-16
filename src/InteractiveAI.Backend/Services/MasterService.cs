@@ -103,6 +103,7 @@ public class MasterService : IMasterService
     public async Task<MasterLookupResult> LookupAsync(string nopol, string? driver, CancellationToken ct)
     {
 
+        _log.LogDebug("Lookup masuk nopol {Nopol} driver {Driver}", nopol ?? "", driver ?? "");
         var converted = IndonesianNumberWords.ToDigits(nopol ?? "");
         var candidate = ExtractPlateCandidate(converted);
         if (string.IsNullOrEmpty(candidate) || !candidate.Any(char.IsDigit))
@@ -113,7 +114,10 @@ public class MasterService : IMasterService
                 "Master KacsGps belum dikonfigurasi.", candidate);
         try
         {
-            return await LookupViewAsync(candidate, nopol ?? "", driver, ct);
+            var result = await LookupViewAsync(candidate, nopol ?? "", driver, ct);
+            _log.LogDebug("Lookup hasil nopol {Nopol} driver {Driver} -> found {Found} nopolDb {NopolDb} aktif {Active} jenis {Jenis} nama {Nama} pair {Pair} exact {Exact} driverMissing {Missing} note {Note}",
+                nopol ?? "", driver ?? "", result.Found, result.Nopol, result.Active, result.TruckType, result.DriverFullName, result.PairMatched, result.MatchExact, result.DriverMissing, result.Note);
+            return result;
         }
         catch (Exception ex)
         {

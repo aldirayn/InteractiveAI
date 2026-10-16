@@ -1,15 +1,18 @@
-using InteractiveAI.Backend.Data;
+using Google.Protobuf.WellKnownTypes;
 using InteractiveAI.Backend.Config;
+using InteractiveAI.Backend.Data;
 using InteractiveAI.Backend.Data.Models.DB.KAGT;
 using InteractiveAI.Backend.DTOs;
 using InteractiveAI.Backend.Models.DB;
 using InteractiveAI.Backend.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Org.BouncyCastle.Asn1.Ocsp;
+using System.Collections;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using System.Collections;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace InteractiveAI.Backend.Services;
 
@@ -124,6 +127,9 @@ public class WoService : IWoService
         var (driver, driverCode, unit, categories, complaint, parking) =
             await ExtractAsync(session.Model, string.Join("\n", transcript), ct);
 
+        _log.LogDebug("Ekstraksi LLM sesi {SessionId} categories: {Categories} complaint: {Complaint} driver: {Driver} unit: {Unit} parkir: {Parking}",
+            sessionId, categories, complaint, $"{driver} {driverCode}".Trim(), unit, parking);
+
         var transcriptText = string.Join("\n", transcript);
         var verified = LastVerifiedMarker(transcriptText);
         if (verified is not null)
@@ -147,6 +153,77 @@ public class WoService : IWoService
             complaint = string.Join("; ", keluhanMap.Select(kv => $"[{kv.Key}] {kv.Value}"));
         }
 
+        var wanted = SplitCategories(categories);
+        var foundInText = DetectCategoriesInText(complaint);
+        foreach (var c in foundInText)
+            if (!wanted.Exists(x => x.Equals(c, StringComparison.OrdinalIgnoreCase)))
+                wanted.Add(c);
+        if (foundInText.Count > 0)
+            _log.LogDebug("WO sesi {SessionId} kategori terdeteksi dari isi: {Found} gabungan: {Cats}",
+                sessionId, string.Join(",", foundInText), string.Join(",", wanted));
+        var rawBeforeSplit = complaint;
+        var rawSegs = SplitRawSegments(rawBeforeSplit);
+        var segCount = rawSegs.Count;
+        _log.LogDebug("WO sesi {SessionId} segmen mentah {Count}: {Segs} kategori LLM: {Cats}",
+            sessionId, segCount, string.Join(" | ", rawSegs), string.Join(",", wanted));
+        if (keluhanMap.Count == 1 && (wanted.Count >= 2 || segCount >= 2))
+        {
+            var soloKey = "";
+            foreach (var k in keluhanMap.Keys) soloKey = k;
+            var others = new List<string>();
+            foreach (var c in wanted)
+                if (!c.Equals(soloKey, StringComparison.OrdinalIgnoreCase))
+                    others.Add(c);
+            if (others.Count == 0 && segCount >= 2)
+                others.AddRange(SplitCategories(string.Join(",", keluhanMap.Keys)));
+            var flags = CategoryMentioned(soloKey, keluhanMap, out var hits);
+            var mentioned = false;
+            foreach (var f in flags) mentioned = mentioned || f;
+            var looseGate = segCount >= 2 && wanted.Count >= 2;
+            if (!mentioned || hits.Count == 0 || looseGate)
+            {
+                var fallback = others.Count > 0 ? others : SplitCategories(rawBeforeSplit);
+                var target = fallback.Count > 0
+                    ? new List<string> { soloKey }
+                    : new List<string>();
+                foreach (var c in fallback)
+                    if (!target.Exists(x => x.Equals(c, StringComparison.OrdinalIgnoreCase)))
+                        target.Add(c);
+                if (target.Count >= 2)
+                {
+                    var fresh = RedistributeComplaint(keluhanMap, target);
+                    if (fresh.Count > 1)
+                    {
+                        foreach (var c in fresh.Keys)
+                            if (!wanted.Exists(x => x.Equals(c, StringComparison.OrdinalIgnoreCase)))
+                                _log.LogWarning("WO sesi {SessionId} LLM klaim [{Claim}] tapi isi menyebut {Cat}",
+                                    sessionId, categories, c);
+                        keluhanMap = fresh;
+                        categories = string.Join(", ", keluhanMap.Keys);
+                        complaint = string.Join("; ", keluhanMap.Select(kv => $"[{kv.Key}] {kv.Value}"));
+                        _log.LogWarning("KeluhanMap 1 kategori ({Solo}) didistribusikan ulang ke {Count} kategori untuk sesi {SessionId}: {Cats}",
+                            soloKey, keluhanMap.Count, sessionId, string.Join(",", keluhanMap.Keys));
+                    }
+                }
+            }
+        }
+        else if (keluhanMap.Count >= 2 && wanted.Count > keluhanMap.Count)
+        {
+            var target = new List<string>(keluhanMap.Keys);
+            foreach (var c in wanted)
+                if (!target.Exists(x => x.Equals(c, StringComparison.OrdinalIgnoreCase)))
+                    target.Add(c);
+            var fresh = RedistributeComplaint(keluhanMap, target);
+            if (fresh.Count > keluhanMap.Count)
+            {
+                keluhanMap = fresh;
+                categories = string.Join(", ", keluhanMap.Keys);
+                complaint = string.Join("; ", keluhanMap.Select(kv => $"[{kv.Key}] {kv.Value}"));
+                _log.LogWarning("KeluhanMap {Before} kategori diperkaya ke {After} kategori untuk sesi {SessionId}: {Cats}",
+                    target.Count - (wanted.Count - keluhanMap.Count), fresh.Count, sessionId, string.Join(",", fresh.Keys));
+            }
+        }
+
         if (transcriptText.LastIndexOf("[LANJUT_AGENT]", StringComparison.OrdinalIgnoreCase)
             > transcriptText.LastIndexOf("[QR KIMO:", StringComparison.Ordinal))
             qr = string.Empty;
@@ -154,6 +231,9 @@ public class WoService : IWoService
         var qrRow = string.IsNullOrWhiteSpace(qr)
             ? new QrKimoResult(false, false, "", "", "", "", "", "", "", false)
             : await _qr.LookupAsync(qr, ct);
+
+        _log.LogDebug("WO sesi {SessionId} QR {Qr} -> checked {Checked} found {Found} nopol {Nopol} driver {Driver} jenis {Jenis} status {Status} usable {Usable}",
+            sessionId, qr, qrRow.Checked, qrRow.Found, qrRow.NoPol, $"{qrRow.DriverName} {qrRow.DriverCode}".Trim(), qrRow.TruckType, qrRow.Status, qrRow.Usable);
 
         if (string.IsNullOrWhiteSpace(unit) && qrRow.Usable) unit = qrRow.NoPol;
         if (string.IsNullOrWhiteSpace(driver) && string.IsNullOrWhiteSpace(driverCode) && qrRow.Usable)
@@ -163,6 +243,8 @@ public class WoService : IWoService
         }
 
         var master = await _master.LookupAsync(unit, $"{driver} {driverCode}".Trim(), ct);
+        _log.LogDebug("WO sesi {SessionId} master unit {Unit} driver {Driver} -> found {Found} nopol {Nopol} aktif {Active} jenis {Jenis} nama {Nama} pair {Pair} exact {Exact} sumber {Source} note {Note}",
+            sessionId, unit, $"{driver} {driverCode}".Trim(), master.Found, master.Nopol, master.Active, master.TruckType, master.DriverFullName, master.PairMatched, master.MatchExact, master.Source, master.Note);
         var masterCtx = string.IsNullOrWhiteSpace(master.Note) ? "" : $" Catatan: {master.Note} [{master.Source}].";
         var driverWins = transcriptText.Contains("[NAMA_SOPIR]", StringComparison.OrdinalIgnoreCase);
 
@@ -180,6 +262,8 @@ public class WoService : IWoService
         if (qrWins)
         {
             var qMaster = await _master.LookupAsync(qrRow.NoPol, qrRow.DriverName, ct);
+            _log.LogDebug("WO sesi {SessionId} master-QR nopol {Nopol} driver {Driver} -> found {Found} pair {Pair} nopolDb {NopolDb}",
+                sessionId, qrRow.NoPol, qrRow.DriverName, qMaster.Found, qMaster.PairMatched, qMaster.Nopol);
             if (qMaster.Found && qMaster.PairMatched)
                 master = qMaster;
         }
@@ -210,6 +294,9 @@ public class WoService : IWoService
                 x.PreLastQcHmGps, x.PreLastQcHmActual))
             .FirstOrDefaultAsync(ct);
 
+        _log.LogDebug("WO sesi {SessionId} carry nopol {Nopol} -> {Carry}", sessionId, nopolKey,
+            carry is null ? "tidak ada histori" : $"KM {carry.KmActual} HM {carry.HmActual} GPS-KM {carry.KmGps} GPS-HM {carry.HmGps}");
+
         var now = DateTime.Now;
 
         decimal gpsKm = 0m, gpsHm = 0m;
@@ -231,6 +318,8 @@ public class WoService : IWoService
                 gpsHm = gpsLast.Hourmeter ?? 0m;
                 gpsStatus = 1;
             }
+            _log.LogDebug("WO sesi {SessionId} GPS nopol {Nopol} -> {Gps}", sessionId, master.Nopol,
+                gpsLast is null ? "tidak ada data" : $"KM {gpsKm} HM {gpsHm} status {gpsStatus}");
         }
         catch (Exception ex)
         {
@@ -240,6 +329,7 @@ public class WoService : IWoService
         var rows = new List<DictionaryEntry>();
         var woNumbers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var primary = "";
+        var srNo = "";
 
         if (keluhanMap.Count == 0)
         {
@@ -277,7 +367,7 @@ public class WoService : IWoService
                     .SqlQueryRaw<string>("CALL sp_get_new_running_no({0})", prefix)
                     .ToListAsync(ct);
 
-                var srNo = (numbers.FirstOrDefault() ?? "").Trim();
+                srNo = (numbers.FirstOrDefault() ?? "").Trim();
                 if (srNo.Length == 0 || srNo.Length > 15)
                     throw new InvalidOperationException(
                         $"SP sp_get_new_running_no tidak mengembalikan nomor valid untuk prefix \"{prefix}\": \"{srNo}\".");
@@ -289,15 +379,63 @@ public class WoService : IWoService
                     isi, parking.Trim(), qr, displayDriver, carry, gpsKm, gpsHm, gpsStatus);
 
                 _mka.TrWoHdrProcess.Add(hdr);
+
                 rows.Add(new DictionaryEntry(cat, srNo));
             }
 
+
+            await _mka.TrWoHdrLog.AddAsync(new TrWoHdrLog
+            {
+                WoNo = srNo,
+                ActionStatus = "WAITING",
+                ActionUser = "Mira AI",
+                ActionDate = DateTime.Now,
+                Noted = BuildCreatedLogNote(srNo, null)
+            });
+
+            await _mka.AddAsync(new TrWoJobProcess
+            {
+                PreSrcNo = srNo,
+                PreJobId = string.Empty,
+                PreJobDesc = string.Empty,
+                TmsDurationJam = "00",
+                TmsDurationMenit = "00",
+                PreJobRemarks = string.Empty,
+                Lnitmseq = 1,
+                TmsGolongan = string.Empty,
+                TmsGroup = 6,
+                Crusrid = "Mira AI",
+                Creatddt = System.DateTime.Now.Date,
+                Createtime = new DateTime(
+                                        1900,
+                                        1,
+                                        1,
+                                        System.DateTime.Now.Hour,
+                                        System.DateTime.Now.Minute,
+                                        System.DateTime.Now.Second),
+                Mdfusrid = string.Empty,
+                Modifdt = new DateTime(1900, 1, 1),
+                Modiftime = new DateTime(1900, 1, 1),
+                RedoJob =  0,
+                PreSubJobId = string.Empty,
+                PreSubJobDesc = string.Empty,
+                SubJobDurationJam = "00",
+                SubJobDurationMenit = "00",
+                DexRowId = 0
+            });
+
             await _mka.SaveChangesAsync(ct);
             await trx.CommitAsync(ct);
+            _log.LogInformation("WO sesi {SessionId} tersimpan {Count} baris: {Pairs}",
+                sessionId, woNumbers.Count, string.Join(", ", woNumbers.Select(kv => $"{kv.Key}={kv.Value}")));
+            _log.LogDebug("WO sesi {SessionId} keluhan per kategori: {Map}",
+                sessionId, string.Join("; ", keluhanMap.Select(kv => $"[{kv.Key}] {kv.Value}")));
         }
-        catch
+        catch (Exception ex)
         {
             await trx.RollbackAsync(ct);
+            _log.LogError(ex, "WO sesi {SessionId} GAGAL (rollback) kategori: {Categories} keluhan: {Complaint}",
+                sessionId, categories, complaint);
             throw;
         }
 
@@ -355,7 +493,6 @@ public class WoService : IWoService
         return wo;
     }
 
-
     private record HistoryCarry(
         DateTime MaintenDate, DateTime MaintenTime,
         decimal KmActual, decimal HmActual, decimal KmGps, decimal HmGps,
@@ -367,7 +504,6 @@ public class WoService : IWoService
         s ??= "";
         return s.Length <= max ? s : s[..max];
     }
-
 
     private static List<string> SplitKeluhan(string complaint)
     {
@@ -433,7 +569,7 @@ public class WoService : IWoService
             PreJenis = Trunc(master.TruckType, 51),
             PreMerk = "",
             PreModel = "",
-            PreReqBy = Trunc(displayDriver, 101),
+            PreReqBy = "Mira AI",
             PreDriverId = Trunc(!string.IsNullOrWhiteSpace(master.DriverCode) ? master.DriverCode : (master.DriverId > 0 ? master.DriverId.ToString() : ""), 35),
             PreDriverName = Trunc(displayDriver, 101),
             PrePriorityId = "",
@@ -473,14 +609,14 @@ public class WoService : IWoService
             PreEstimasiTime = empty1900,
             PreRev = 0,
             PreRemarks = string.IsNullOrWhiteSpace(qr) ? "" : Trunc($"QR KIMO: {qr}", 1000),
-            PreStatus = InitialPreStatus,
+            PreStatus = 5,
             Interid = "MKA",
             Crusrid = "LOKET",
             Creatddt = now,
             Mdfusrid = "LOKET",
             Modifdt = now,
             PreRejectType = 0,
-            PreReject = "",
+            PreReject = string.Empty,
             Createtime = now,
             PreJnsPerbaikan = Trunc(categories, 33),
             PreGroup = "",
@@ -611,7 +747,160 @@ public class WoService : IWoService
         return out_;
     }
 
-    // Ambil penanda verifikasi terakhir "(kode: NORM | sopir: NAMA)" dari transkrip.
+    private List<string> SplitCategories(string? categories)
+    {
+        var out_ = new List<string>();
+        if (string.IsNullOrWhiteSpace(categories)) return out_;
+        foreach (var token in categories.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var t = System.Text.RegularExpressions.Regex.Replace(token.Trim(), @"\s+", " ");
+            if (t.Length == 0) continue;
+            var canon = NormalizeCategory(t);
+            if (out_.Exists(x => x.Equals(canon, StringComparison.OrdinalIgnoreCase))) continue;
+            out_.Add(canon);
+        }
+        return out_;
+    }
+
+    private List<string> SplitRawSegments(string? complaint)
+    {
+        var out_ = new List<string>();
+        if (string.IsNullOrWhiteSpace(complaint)) return out_;
+        foreach (var seg in complaint.Split(';'))
+        {
+            var t = seg.Trim();
+            if (t.Length > 0) out_.Add(t);
+        }
+        return out_;
+    }
+
+    private List<string> DetectCategoriesInText(string? text)
+    {
+        var out_ = new List<string>();
+        var probe = new List<string>(_woOpt.CanonicalCategories);
+        foreach (var seg in SplitRawSegments(text))
+            foreach (var sub in SplitPiece(seg))
+            {
+                var hit = ClassifyPiece(sub, probe);
+                if (hit.Length == 0) continue;
+                if (out_.Exists(x => x.Equals(hit, StringComparison.OrdinalIgnoreCase))) continue;
+                out_.Add(hit);
+            }
+        return out_;
+    }
+
+    private List<string> SplitPiece(string? piece)
+    {
+        var out_ = new List<string>();
+        if (string.IsNullOrWhiteSpace(piece)) return out_;
+        foreach (var comma in piece.Split(','))
+        {
+            var parts = System.Text.RegularExpressions.Regex.Split(
+                comma, @"\s+dan\s+|\s+dengan\s+|\s+plus\s+|\s*\+\s*|\s*&\s*|\s*/\s*",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var buf = new List<string>();
+            foreach (var p in parts)
+            {
+                var t = p.Trim().TrimEnd('.', ';', ':');
+                if (t.Length == 0) continue;
+                buf.Add(t);
+                if (buf.Count == 2)
+                {
+                    out_.Add(string.Join(" ", buf));
+                    buf.Clear();
+                }
+            }
+            if (buf.Count > 0) out_.Add(string.Join(" ", buf));
+        }
+        if (out_.Count == 0) out_.Add(piece.Trim());
+        return out_;
+    }
+
+    private List<bool> CategoryMentioned(string key, Dictionary<string, string> map, out List<string> witnesses)
+    {
+        witnesses = new List<string>();
+        var found = new List<bool>();
+        var needles = new List<string> { System.Text.RegularExpressions.Regex.Escape(key.ToUpperInvariant()) };
+        foreach (var alias in _woOpt.CategoryAliases)
+        {
+            if (!alias.Value.Trim().Equals(key, StringComparison.OrdinalIgnoreCase)) continue;
+            var n = System.Text.RegularExpressions.Regex.Escape(alias.Key.Trim().ToUpperInvariant());
+            if (n.Length > 0 && !needles.Contains(n)) needles.Add(n);
+        }
+        foreach (var kv in map)
+        {
+            var hit = false;
+            var hay = (kv.Value ?? string.Empty).ToUpperInvariant();
+            foreach (var n in needles)
+            {
+                if (System.Text.RegularExpressions.Regex.IsMatch(hay, @"\b" + n + @"\b")) { hit = true; break; }
+            }
+            found.Add(hit);
+            if (hit) witnesses.Add($"{kv.Key}: {kv.Value}".Trim());
+        }
+        return found;
+    }
+
+    private string ClassifyPiece(string piece, List<string> cats)
+    {
+        var hay = " " + (piece ?? string.Empty).ToUpperInvariant() + " ";
+        var score = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var matched = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var alias in _woOpt.CategoryAliases)
+        {
+            var n = System.Text.RegularExpressions.Regex.Escape(alias.Key.Trim().ToUpperInvariant());
+            if (n.Length == 0) continue;
+            if (!System.Text.RegularExpressions.Regex.IsMatch(hay, @"\b" + n + @"\b")) continue;
+            var canon = alias.Value.Trim();
+            score[canon] = score.TryGetValue(canon, out var s) ? s + 2 : 2;
+            if (!matched.ContainsKey(canon)) matched[canon] = true;
+        }
+        foreach (var c in _woOpt.CanonicalCategories)
+        {
+            var n = System.Text.RegularExpressions.Regex.Escape(c.ToUpperInvariant());
+            if (System.Text.RegularExpressions.Regex.IsMatch(hay, @"\b" + n + @"\b"))
+            {
+                score[c] = score.TryGetValue(c, out var s) ? s + 1 : 1;
+                if (!matched.ContainsKey(c)) matched[c] = true;
+            }
+        }
+        var best = "";
+        var bestScore = 0;
+        foreach (var c in cats)
+        {
+            if (score.TryGetValue(c, out var s) && s > bestScore)
+            {
+                best = c;
+                bestScore = s;
+            }
+        }
+        if (bestScore > 0) return best;
+        foreach (var c in cats)
+            if (matched.ContainsKey(c)) return c;
+        return "";
+    }
+
+    private Dictionary<string, string> RedistributeComplaint(Dictionary<string, string> map, List<string> cats)
+    {
+        var out_ = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var raw = new List<string>();
+        foreach (var kv in map)
+            foreach (var piece in SplitRawSegments(kv.Value))
+                foreach (var sub in SplitPiece(piece))
+                {
+                    var clean = System.Text.RegularExpressions.Regex.Replace(sub.Trim(), @"^\[[^\]]+\]\s*", "");
+                    raw.Add($"[{kv.Key}] {(clean.Length > 0 ? clean : sub.Trim())}".Trim());
+                }
+        var idx = 0;
+        foreach (var piece in raw)
+        {
+            var target = ClassifyPiece(piece, cats);
+            if (target.Length == 0) target = cats[idx % cats.Count];
+            AppendKeluhan(out_, target, piece);
+            idx++;
+        }
+        return out_;
+    }
     // Mengembalikan null bila tak ada (fallback: nilai LLM).
     private static (string Norm, string FullName)? LastVerifiedMarker(string transcriptText)
     {
@@ -695,4 +984,11 @@ public class WoService : IWoService
     public async Task<WorkOrder> GetAsync(long id, CancellationToken ct) =>
         await _db.WorkOrders.FindAsync(new object[] { id }, ct)
         ?? throw new KeyNotFoundException("WO tidak ditemukan.");
+
+    private static string BuildCreatedLogNote(string srcNo, string? nomsr)
+    {
+        var msr = string.IsNullOrWhiteSpace(nomsr) ? "-" : nomsr.Trim();
+        var note = $"Work Order {srcNo} created with status WAITING. WO berasal dari KIMO dgn MSR : {msr}";
+        return note.Length > 500 ? note.Substring(0, 500) : note;
+    }
 }

@@ -11,7 +11,8 @@ namespace InteractiveAI.Backend.Controllers;
 public class ChatController : ControllerBase
 {
     private readonly IChatService _chat;
-    public ChatController(IChatService chat) => _chat = chat;
+    private readonly ILogger<ChatController> _log;
+    public ChatController(IChatService chat, ILogger<ChatController> log) { _chat = chat; _log = log; }
 
     [HttpPost]
     public async Task<ActionResult<ChatResponse>> Post([FromBody] ChatRequest req, CancellationToken ct)
@@ -21,9 +22,21 @@ public class ChatController : ControllerBase
         {
             return Ok(await _chat.SendAsync(req, ct));
         }
-        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
-        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
-        catch (InvalidOperationException ex) { return StatusCode(502, new { error = ex.Message }); }
+        catch (ArgumentException ex)
+        {
+            _log.LogWarning(ex, "Chat request tidak valid");
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _log.LogWarning(ex, "Chat sesi tidak ditemukan");
+            return NotFound(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _log.LogWarning(ex, "Chat gagal: {Error}", ex.Message);
+            return StatusCode(502, new { error = ex.Message });
+        }
     }
 
     public record GreetRequest(string? Model, string? SystemPrompt, string Greeting);

@@ -1,6 +1,5 @@
 let sessionId = null;
 
-
 let voiceMode = false;
 let speakerOn = true;
 let listening = false;
@@ -8,6 +7,7 @@ let recognition = null;
 let idVoice = null;
 let lockedVoice = null; // nilai voice terkunci per sesi (bagian dari lockedCfg)
 let lockedCfg = null;   // snapshot {voice, rate} — SATU-SATUNYA cfg suara per sesi
+
 function ensureVoiceLock() {
     if (!lockedCfg) {
         let v = 'browser';
@@ -20,8 +20,8 @@ function ensureVoiceLock() {
 
     return lockedCfg;
 }
-function effectiveVoice() { return ensureVoiceLock().voice; }
 
+function effectiveVoice() { return ensureVoiceLock().voice; }
 
 const AI_TAIL_MS = 700;
 const STT_FALLBACK_SEND_MS = 1000;
@@ -53,13 +53,13 @@ let aiSpeechStartMs = 0;
 
 const VOICE_SYSTEM_PROMPT = 'Kamu adalah Mira, petugas loket Bengkel truk yang ramah dan supel. Ikuti alur TETAP ini, satu langkah per giliran, 1-2 kalimat pendek gaya lisan sehari-hari, tanpa markdown, tanpa emoji. Setiap giliran WAJIB diakhiri dengan satu pertanyaan ATAU salah satu baris penutup ([WO_SIAP]/[SELESAI_ADMIN_WO]/[SELESAI_LOKET_WO]). Jangan pernah menutup giliran dengan pernyataan atau konfirmasi saja. '
     + 'Langkah 0: sopir sudah terdeteksi kamera dan disapa, sapaan sudah menanyakan apakah punya QR Code aplikasi Kimo. '
-    + 'Langkah 1: Bila sopir bilang PUNYA/ADA QR: minta QR KIMO ditunjukkan ke kamera (maksimal dua kali bertanya). Tunggu sistem menyisipkan pesan penanda QR KIMO berisi status dan data acuan. Bila status terminal (Batal/Cancel/Done): konfirmasi singkat, suruh sopir langsung ke petugas loket manusia, tutup dengan baris [SELESAI_ADMIN_WO] sendirian di baris terakhir. Bila status Draft/Open/Accept: jadikan data nama, nopol, dan jenis sebagai acuan, sebutkan nama driver persis dari data KIMO (field NamaDriver) setiap menyebut sopir, LEWATI tanya nama/nopol/jenis, langsung tanyakan keluhan dan kategori perbaikan (Truk, Reefer, Cabin, GPS, Genset, Box, Ban; boleh lebih dari satu), lalu parkir, rangkum, dan tutup [WO_SIAP]. Bila pesan bilang tak terdaftar atau gagal cek: anggap sopir tanpa QR, lanjut Langkah 1b. Bila sopir bilang TIDAK PUNYA/TIDAK ADA QR: anggap sopir tanpa QR, lalu LANGSUNG di giliran yang sama tanyakan nama dan nopol truk dengan kalimat: Boleh sebutkan nama abang dan nopol truknya? Nopol boleh dieja satu per satu (contoh B 9 0 0 2 U X U). Bila sopir hanya menyebut nopol tanpa nama, tetap lanjut (nama tidak wajib). JANGAN PERNAH tanyakan kode driver. Jangan menanyakan apakah mau dilayani petugas lain. Bila jawaban tak jelas punya/tidak: tanya ulang sekali secara singkat. '
+    + 'Langkah 1: Bila sopir bilang PUNYA/ADA QR: minta QR KIMO ditunjukkan ke kamera (maksimal dua kali bertanya). Tunggu sistem menyisipkan pesan penanda QR KIMO berisi status dan data acuan. Bila status terminal (Batal/Cancel/Done): konfirmasi singkat, suruh sopir langsung ke petugas loket manusia, tutup dengan baris [SELESAI_ADMIN_WO] sendirian di baris terakhir. Bila status Draft/Open/Accept: jadikan data nama, nopol, dan jenis sebagai acuan, sebutkan nama driver persis dari data KIMO (field NamaDriver) setiap menyebut sopir, LEWATI tanya nama/nopol/jenis, langsung tanyakan keluhan dan kategori perbaikan (Truk atau Reefer atau Cabin atau GPS atau Genset atau Box atau Ban; boleh lebih dari satu), lalu parkir, rangkum, dan tutup [WO_SIAP]. Bila pesan bilang tak terdaftar atau gagal cek: anggap sopir tanpa QR, lanjut Langkah 1b. Bila sopir bilang TIDAK PUNYA/TIDAK ADA QR: anggap sopir tanpa QR, lalu LANGSUNG di giliran yang sama tanyakan nama dan nopol truk dengan kalimat: Boleh sebutkan nama abang dan nopol truknya? Nopol boleh dieja satu per satu (contoh B 9 0 0 2 U X U). Bila sopir hanya menyebut nopol tanpa nama, tetap lanjut (nama tidak wajib). JANGAN PERNAH tanyakan kode driver. Jangan menanyakan apakah mau dilayani petugas lain. Bila jawaban tak jelas punya/tidak: tanya ulang sekali secara singkat. '
     + 'Langkah 1b (tanpa QR): tanyakan NAMA dan NOPOL dengan kalimat: Boleh sebutkan nama abang dan nopol truknya? Nopol boleh dieja satu per satu (contoh B 9 0 0 2 U X U). Bila sopir hanya menyebut nopol tanpa nama, tetap lanjut (nama tidak wajib). JANGAN PERNAH tanyakan kode driver. Bila sopir menyebut nama yang beda dengan data, catat apa adanya tanpa konfirmasi dan langsung lanjut. Minta sopir menyebut nopol LENGKAP dalam satu ucapan dengan pola huruf spasi angka spasi huruf (contoh: B 9002 UXU). Bila suara sopir terpotong, minta ulang seluruhnya, jangan menggabungkan potongan. Pada kegagalan nopol PERTAMA sistem otomatis membuka keyboard di layar: kabari sopir bahwa dia boleh mengetik nopolnya sendiri di keyboard itu, dan jangan menyuruh menyentuh kolom form. Bila pesan sistem menandai NOPOL BELUM TERBACA, minta nopol lengkap sambil mengulang bahwa ada keyboard di layar. Bila pesan menandai NOPOL DITEMUKAN: JANGAN verifikasi dulu. Minta konfirmasi sopir dengan pola kaku: Oke {nopol dieja per huruf} jenis truknya {jenis}. Benar ya bang? Eja nopol per huruf terpisah (contoh: B 9 0 0 2 U X U), sebut jenis persis dari data. Tunggu jawaban: bila sopir jawab iya/benar/betul maka anggap terverifikasi lalu tanyakan: Bisa dijelaskan dari truk apa yang mau di periksa atau di perbaiki bang? Bila sopir jawab salah/bukan maka minta eja ulang nopol lengkap atau ketik di Virtual Keyboard dengan kalimat: Bisa di ulangi nopolnya dengan cara di eja lagi bang? atau bisa ketik Virtual Keyboard bang. '
     + 'Bila sistem menemukan nopol (dengan atau tanpa nama sopir), JANGAN tanyakan identitas apa pun — langsung lanjut ke keluhan. Bila pesan menandai NOPOL DITEMUKAN, minta konfirmasi dengan pola kaku Benar-ya-bang seperti Langkah 1b (jangan langsung ke keluhan). Bila TIDAK DITEMUKAN / tak cocok: pada kegagalan pertama tanyakan ulang (mungkin salah dengar) sambil menawarkan keyboard yang sudah terbuka di layar untuk mengetik nopol manual; bila gagal lagi, sistem memintamu meminta QR KIMO (ikuti instruksi pesannya: bandingkan, konfirmasi, atau lewati bila tak punya). Bila sistem menyisipkan pesan GAGAL TOTAL, sampaikan sopir langsung ke loket WO manusia lalu tutup dengan [SELESAI_LOKET_WO]. SELALU sebutkan nopol dengan pola huruf spasi angka spasi huruf (contoh: B 9002 UXU), janganmenyebut tanpa spasi. Bila pesan menandai NAMA DITERIMA APA ADANYA (nopol cocok view tapi nama sopir beda): PAKAI NAMA YANG DISEBUT SOPIR untuk WO (bukan nama di view), minta konfirmasi Benar-ya-bang seperti Langkah 1b (tanpa tanya ulang). Data yang sudah tercatat (nopol, jenis truk) JANGAN pernah ditanyakan ulang; bila nopol ketemu dan cocok (sendiri maupun via keyboard/QR), langsung tanyakan keluhannya. '
-    + 'Langkah 3: tanyakan permintaan perbaikan: Truk, Reefer, Cabin, GPS, Genset, Box, Ban (hanya bila nopol sudah jelas dari master atau acuan QR). Ingat: keluhan AC (tidak dingin, freon) masuk Reefer, bukan Cabin; Cabin hanya untuk kabin non-pendingin (jok, kaca, pintu, dashboard). Tanyakan kategori dan detail keluhannya SATU PER SATU LEWAT SUARA; JANGAN pernah menyuruh sopir mengisi, menyentuh, atau melihat baris form — form adalah catatan sistem, bukan tugas sopir. Setiap isian baris form yang masuk sebagai pesan [KELUHAN Kategori: isi] adalah DATA (bukan ucapan) — jangan tanyakan ulang yang sudah terisi di baris. Bila jawaban suara di luar tujuh kategori itu, ulangi sampai sopir menyebut salah satunya. Bila sopir menambah keluhan untuk kategori yang sudah ada (mis. ada tambahan untuk truk): catat sebagai tambahan pada kategori itu, jangan ganti atau hapus yang lama. Lalu tanyakan keluhan detail tiap kategori yang ada isinya. '
+    + 'Langkah 3: tanyakan permintaan perbaikan: Truk atau Reefer atau Cabin atau GPS atau Genset atau Box atau Ban (hanya bila nopol sudah jelas dari master atau acuan QR). Ingat: keluhan AC (tidak dingin, freon) masuk Reefer, bukan Cabin; Cabin hanya untuk kabin non-pendingin (jok, kaca, pintu, dashboard). Tanyakan kategori dan detail keluhannya SATU PER SATU LEWAT SUARA; JANGAN pernah menyuruh sopir mengisi, menyentuh, atau melihat baris form — form adalah catatan sistem, bukan tugas sopir. Setiap isian baris form yang masuk sebagai pesan [KELUHAN Kategori: isi] adalah DATA (bukan ucapan) — jangan tanyakan ulang yang sudah terisi di baris. Bila jawaban suara di luar tujuh kategori itu, ulangi sampai sopir menyebut salah satunya. Bila sopir menambah keluhan untuk kategori yang sudah ada (mis. ada tambahan untuk truk): catat sebagai tambahan pada kategori itu, jangan ganti atau hapus yang lama. Lalu tanyakan keluhan detail tiap kategori yang ada isinya. '
     + 'Langkah 4: tanyakan truk parkir di mana saat ini. '
     + 'Langkah 5: QR KIMO sudah ditangani tuntas di Langkah 1, jangan tanya atau bahas QR lagi. '
-    + 'Langkah 6: bila kategori + keluhan detail + parkir SUDAH diketahui (walau datang sekaligus dalam satu kalimat atau dari baris form): jangan konfirmasi berputar-putar, langsung tanyakan satu pertanyaan: masih ada keluhan lain? Bila sopir jawab tidak/cukup/tidak ada: di giliran berikutnya langsung ke Langkah 7. Bila ya: tanyakan kategori tambahannya lalu detailnya lewat suara, dan perlakukan sebagai tambahan pada kategori itu bila kategorinya sudah ada. Bila jawaban sopir tidak jelas/cukup-atau-belum (mis. hanya "halo", "iya", gumaman): JANGAN anggap cukup — tanyakan ulang sekali dengan menyebut menu kategorinya (Truk, Reefer, Cabin, GPS, Genset, Box, Ban). Bila sopir menyebut masalah tanpa kategori jelas (mis. error, rusak, mati, bermasalah): WAJIB tanyakan itu keluhan untuk kategori apa sebelum lanjut. Bila sopir bertanya "sudah ditulis/dicatat belum" tentang sesuatu: JANGAN pernah mengiyakan bila hal itu belum tercatat di percakapan — tanyakan detail + kategorinya dulu. JANGAN pernah mengklaim "sudah saya catat semua" kecuali setiap itemnya benar-benar sudah terkonfirmasi. '
+    + 'Langkah 6: bila kategori + keluhan detail + parkir SUDAH diketahui (walau datang sekaligus dalam satu kalimat atau dari baris form): jangan konfirmasi berputar-putar, langsung tanyakan satu pertanyaan: masih ada keluhan lain? Bila sopir jawab tidak/cukup/tidak ada: di giliran berikutnya langsung ke Langkah 7. Bila ya: tanyakan kategori tambahannya lalu detailnya lewat suara, dan perlakukan sebagai tambahan pada kategori itu bila kategorinya sudah ada. Bila jawaban sopir tidak jelas/cukup-atau-belum (mis. hanya "halo", "iya", gumaman): JANGAN anggap cukup — tanyakan ulang sekali dengan menyebut menu kategorinya (Truk atau Reefer atau Cabin atau GPS atau Genset atau Box atau Ban). Bila sopir menyebut masalah tanpa kategori jelas (mis. error, rusak, mati, bermasalah): WAJIB tanyakan itu keluhan untuk kategori apa sebelum lanjut. Bila sopir bertanya "sudah ditulis/dicatat belum" tentang sesuatu: JANGAN pernah mengiyakan bila hal itu belum tercatat di percakapan — tanyakan detail + kategorinya dulu. JANGAN pernah mengklaim "sudah saya catat semua" kecuali setiap itemnya benar-benar sudah terkonfirmasi. '
     + 'Langkah 7 (rekap): mulai giliran rekap dengan baris persis [REKAP] sendirian di baris pertama (jangan dibacakan, jangan dijelaskan), lalu rangkum semua (nopol, jenis truk, kategori, keluhan detail, parkir; sertakan nama hanya bila diketahui dari QR/data) dengan natural 1-3 kalimat, dan akhiri dengan SATU pertanyaan: masih ada tambahan? (TANPA [WO_SIAP] di giliran ini). Bila sopir jawab tidak/cukup/tidak ada: di giliran berikutnya katakan WO akan dicatatkan lalu tutup dengan baris persis [WO_SIAP] sendirian di baris terakhir. Bila sopir menambah keluhan: catat sebagai tambahan pada kategorinya (atau kategori baru bila beda), ulangi rekap singkat + tanya tambahan lagi; bila sudah tidak ada tambahan, tutup [WO_SIAP]. Dan sampaikan ke Sopir kalau WO sudah dibuat dan dipersilahkan menunggu.'
     + 'Berkomunikasilah senatural mungkin, sopan, dan komunikatif dan gunakan kata Bang dan jangan dijeda menggunakan koma atau titik. Jika perlu konfirmasi, ulangi keluhan sopir dan pastikan semua informasi kamu dapatkan.';
 
@@ -109,6 +109,7 @@ function formatPlateInput(inp) {
         last = idx + m[0].length;
         if (m[0].length === 0) PLATE_TOKEN_RE.lastIndex++;
     }
+
     out += v.slice(last);
     if (out === v) return false;
     inp.value = out;
@@ -144,10 +145,12 @@ function bubble(role, content) {
     followChatBottom();
     return div.querySelector('.direct-chat-text');
 }
+
 const CHAT_OPEN_KEY = 'loketChatOpen';
 const THEME_KEY = 'loketTheme';
 let chatCollapsed = true;
 let chatHiddenCount = 0;
+
 function applyTheme() {
     let saved = null;
     try { saved = localStorage.getItem(THEME_KEY); } catch { }
@@ -177,12 +180,14 @@ function setChatPreview(txt) {
     prev.textContent = t.length > 140 ? t.slice(0, 140) + '...' : t;
     prev.title = t;
 }
+
 function noteChatActivity(role, content) {
     setChatPreview(content || '');
     if (!chatCollapsed) { chatHiddenCount = 0; setChatBadge(0); return; }
     chatHiddenCount++;
     setChatBadge(chatHiddenCount);
 }
+
 function noteSystem(msg) {
     setStatus(msg);
     if (!chatCollapsed) return;
@@ -190,6 +195,7 @@ function noteSystem(msg) {
     chatHiddenCount++;
     setChatBadge(chatHiddenCount);
 }
+
 function applyChatView() {
     document.documentElement.classList.toggle('chat-open', !chatCollapsed);
     const btn = document.getElementById('btnChatToggle');

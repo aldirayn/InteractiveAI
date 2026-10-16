@@ -3,9 +3,21 @@ using InteractiveAI.Backend.Data;
 using InteractiveAI.Backend.Services;
 using Microsoft.EntityFrameworkCore;
 using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+using Serilog;
 using System.Data;
 
-var builder = WebApplication.CreateBuilder(args);
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(new ConfigurationBuilder()
+        .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+        .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true, reloadOnChange: true)
+        .AddEnvironmentVariables()
+        .Build())
+    .CreateLogger();
+
+try
+{
+    var builder = WebApplication.CreateBuilder(args);
+    builder.Host.UseSerilog();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -322,23 +334,14 @@ static void EnsureMysqlFk(AppDbContext db)
     if (!wasOpen) conn.Open();
     try
     {
-        bool exists;
-        using (var cmd = conn.CreateCommand())
-        {
-            // Cek FK apa pun dari Messages.SessionId -> Sessions, apa pun namanya
-            // (EnsureCreated milik EF biasanya memberi nama FK_Messages_Sessions_SessionId)
-            cmd.CommandText =
-                "SELECT 1 FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE " +
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'Messages' " +
-                "AND COLUMN_NAME = 'SessionId' AND REFERENCED_TABLE_NAME = 'Sessions' LIMIT 1";
-            using var reader = cmd.ExecuteReader();
-            exists = reader.Read();
-        } // reader & cmd ditutup di sini
-
-        if (!exists)
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS " +
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'Messages' " +
+            "AND CONSTRAINT_NAME = 'FK_Messages_Sessions'";
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
             db.Database.ExecuteSqlRaw(
-                "ALTER TABLE `Messages` ADD CONSTRAINT `FK_Messages_Sessions` " +
-                "FOREIGN KEY (`SessionId`) REFERENCES `Sessions` (`Id`) ON DELETE CASCADE");
+                "ALTER TABLE `Messages` ADD CONSTRAINT `FK_Messages_Sessions` FOREIGN KEY (`SessionId`) REFERENCES `Sessions` (`Id`) ON DELETE CASCADE");
     }
     finally { if (!wasOpen) conn.Close(); }
 }
@@ -348,6 +351,16 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+app.UseSerilogRequestLogging(o =>
+{
+    o.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
+    o.GetLevel = (ctx, elapsed, ex) => ex is not null
+        ? Serilog.Events.LogEventLevel.Error
+        : ctx.Response.StatusCode >= 500
+            ? Serilog.Events.LogEventLevel.Error
+            : Serilog.Events.LogEventLevel.Information;
+});
 
 app.UseCors("frontend");
 app.UseAuthorization();
@@ -371,4 +384,14 @@ _ = Task.Run(async () =>
     catch {  }
 });
 
-app.Run();
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Backend berhenti karena exception yang tidak tertangani saat startup");
+    throw;
+}
+finally
+{
+    Log.CloseAndFlush();
+}

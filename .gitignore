@@ -8,3 +8,5 @@ obj/
 *.bin
 weya_nc*.dll
 *.tar.gz
+# Log Serilog backend (berisi isi percakapan penuh — lokal saja):
+logs/

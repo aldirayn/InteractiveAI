@@ -63,8 +63,13 @@ public class QrKimoService : IQrKimoService
                 .Select(k => new { k.Srdnumber, k.NoPol, k.NamaDriver, k.KodeDriverLama, k.KodeDriver, k.JenisTruck, k.JenisPerbaikan, k.LastStatus })
                 .FirstOrDefaultAsync(ct);
             if (row is null)
+            {
+                _log.LogDebug("QR {Srd} -> tidak terdaftar", srd);
                 return new QrKimoResult(true, false, srd, "", "", "", "", "", "", false);
+            }
             var usable = IsUsableStatus(row.LastStatus);
+            _log.LogDebug("QR {Srd} -> nopol {Nopol} driver {Driver} jenis {Jenis} perbaikan {Perbaikan} status {Status} usable {Usable}",
+                srd, row.NoPol ?? "", $"{row.NamaDriver} {row.KodeDriverLama}".Trim(), row.JenisTruck ?? "", row.JenisPerbaikan ?? "", row.LastStatus ?? "", usable);
             return new QrKimoResult(true, true, row.Srdnumber,
                 row.NoPol ?? "", row.NamaDriver ?? "",
                 string.IsNullOrWhiteSpace(row.KodeDriverLama) ? (row.KodeDriver ?? "") : row.KodeDriverLama!,

@@ -50,6 +50,9 @@ public class OllamaService : IOllamaService
 
     public async Task<string> ChatAsync(string model, List<OllamaChatMessage> messages, double temperature, CancellationToken ct = default)
     {
+        _log.LogDebug("Ollama request model {Model} suhu {Temp} {Count} pesan: {Payload}",
+            model, temperature, messages.Count,
+            string.Join("\n", messages.Select(m => $"{m.Role}: {m.Content}")));
         var payload = new OllamaChatRequest
         {
             Model = model,
@@ -62,18 +65,22 @@ public class OllamaService : IOllamaService
         if (!res.IsSuccessStatusCode)
         {
             var err = await res.Content.ReadAsStringAsync(ct);
-            _log.LogWarning("Ollama error {Status}: {Err}", res.StatusCode, err);
+            _log.LogWarning("Ollama error {Status} model {Model} {Count} pesan: {Err}", res.StatusCode, model, messages.Count, err);
             throw new HttpRequestException($"Ollama returned {(int)res.StatusCode}: {err}");
         }
         var body = await res.Content.ReadFromJsonAsync<OllamaChatResponse>(cancellationToken: ct);
         var content = body?.Message.Content?.Trim();
         if (string.IsNullOrWhiteSpace(content))
             throw new InvalidOperationException("Ollama returned empty response.");
+        _log.LogDebug("Ollama respons model {Model} {Len} karakter: {Content}", model, content.Length, content);
         return content;
     }
 
     public async IAsyncEnumerable<string> ChatStreamAsync(string model, List<OllamaChatMessage> messages, double temperature, [EnumeratorCancellation] CancellationToken ct = default)
     {
+        _log.LogDebug("Ollama stream request model {Model} suhu {Temp} {Count} pesan: {Payload}",
+            model, temperature, messages.Count,
+            string.Join("\n", messages.Select(m => $"{m.Role}: {m.Content}")));
         var payload = new OllamaChatRequest
         {
             Model = model,
@@ -87,7 +94,7 @@ public class OllamaService : IOllamaService
         if (!res.IsSuccessStatusCode)
         {
             var err = await res.Content.ReadAsStringAsync(ct);
-            _log.LogWarning("Ollama stream error {Status}: {Err}", res.StatusCode, err);
+            _log.LogWarning("Ollama stream error {Status} model {Model} {Count} pesan: {Err}", res.StatusCode, model, messages.Count, err);
             throw new HttpRequestException($"Ollama returned {(int)res.StatusCode}: {err}");
         }
         await using var stream = await res.Content.ReadAsStreamAsync(ct);
